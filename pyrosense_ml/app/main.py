@@ -1,8 +1,14 @@
 """PyroSense ML service — FastAPI application entry point.
 
-Lifespan: load + validate model → connect PostgreSQL → ensure schema →
-seed historical hotspots (when empty). Fails fast on any of these — a ML
-service that cannot prove its model/DB/schema consistency must not serve.
+Lifespan: connect PostgreSQL → ensure schema → load + validate model →
+seed historical hotspots (when empty) → optional live-ingest scheduler.
+Fails fast on any of these — a ML service that cannot prove its
+model/DB/schema consistency must not serve.
+
+The DB connect deliberately happens BEFORE model loading: load_model() is
+the only place TensorFlow (which bundles gRPC) enters the process, and
+asyncpg's first real socket I/O must not race gRPC's native epoll poller
+inside a cgroup-limited container (free(): invalid pointer, exit 139).
 """
 
 from __future__ import annotations
@@ -59,28 +65,12 @@ async def lifespan(app: FastAPI):
     _setup_logging()
     logger = logging.getLogger("pyrosense.startup")
 
-    # 1. Models — load + validate classifier + GRU risk models against the
-    # frozen schema (hard-fails on any mismatch).
-    from app.ml.model_loader import load_model
-
-    loaded = load_model()
-    logger.info(
-        "models ready: classifier_version=%s schema=%s classifier_features=%d "
-        "classes=%s legacy_gbm_loaded=%s risk_horizons=%s",
-        CLASSIFIER_MODEL_VERSION,
-        SCHEMA_VERSION,
-        len(CLASSIFIER_FEATURES),
-        list(CLASSIFIER_CLASSES),
-        loaded.gbm_pipeline is not None,
-        sorted(loaded.risk_models),
-    )
-
-    # 2. PostgreSQL — connectivity + schema + seed.
+    # 1. PostgreSQL — connectivity + schema FIRST, while TensorFlow/gRPC does
+    # not exist in the process yet (load_model() below is the only TF import).
     from sqlalchemy import text
 
-    from app.db.engine import get_engine, get_session_factory
+    from app.db.engine import get_engine
     from app.db.models import Base
-    from app.db.seed import seed_if_empty
 
     engine = get_engine()
     async with engine.begin() as conn:
@@ -98,6 +88,27 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
         logger.info("db: schema ensure (create_all) ok")
 
+    # 2. Models — load + validate classifier + GRU risk models against the
+    # frozen schema (hard-fails on any mismatch).
+    from app.ml.model_loader import load_model
+
+    loaded = load_model()
+    logger.info(
+        "models ready: classifier_version=%s schema=%s classifier_features=%d "
+        "classes=%s legacy_gbm_loaded=%s risk_horizons=%s",
+        CLASSIFIER_MODEL_VERSION,
+        SCHEMA_VERSION,
+        len(CLASSIFIER_FEATURES),
+        list(CLASSIFIER_CLASSES),
+        loaded.gbm_pipeline is not None,
+        sorted(loaded.risk_models),
+    )
+
+    # 3. Seed historical hotspots (when empty) — AFTER model loading: every
+    # seeded row runs classifier inference.
+    from app.db.engine import get_session_factory
+    from app.db.seed import seed_if_empty
+
     factory = get_session_factory()
     logger.info("db: session factory created")
     async with factory() as session:
@@ -105,7 +116,7 @@ async def lifespan(app: FastAPI):
             await seed_if_empty(session)
             logger.info("db: seed_if_empty returned")
 
-    # 3. Optional FIRMS live-ingest scheduler (Node.js cron remains primary).
+    # 4. Optional FIRMS live-ingest scheduler (Node.js cron remains primary).
     ingest_task: asyncio.Task | None = None
     if settings.ENABLE_LIVE_INGEST_SCHEDULER:
         if not settings.FIRMS_MAP_KEY:
