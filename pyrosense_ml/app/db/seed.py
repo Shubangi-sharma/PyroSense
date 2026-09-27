@@ -41,6 +41,38 @@ logger = logging.getLogger("pyrosense.seed")
 
 SQLITE_FALLBACK_VERSION = "0.0.0-sqlite-fallback"
 
+# Default location of the frozen enriched CSV (43 classifier features +
+# coordinates + label). The repo ships the model artifacts but not the CSV —
+# drop it here (or mount/point PYROSENSE_HISTORICAL_CSV at it) and startup
+# seeds from it instead of the SQLite fallback. Resolved against the REPO ROOT
+# (three levels up: app/db/seed.py -> app -> pyrosense_ml -> repo root) so the
+# path works regardless of the process working directory (/srv/pyrosense_ml in
+# the container, CSV lands at /srv/data).
+DEFAULT_HISTORICAL_CSV = (
+    Path(__file__).resolve().parents[3] / "data" / "historical_hotspots.csv"
+)
+
+# Column-name aliases accepted in the CSV for coords / label / hotspot id.
+# Feature columns must match CLASSIFIER_FEATURES verbatim (no aliases).
+# Canonical spellings come first so real columns are never clobbered.
+_ALIASES = {
+    "latitude": "latitude",
+    "hotspot_latitude": "latitude",
+    "lat": "latitude",
+    "longitude": "longitude",
+    "hotspot_longitude": "longitude",
+    "lng": "longitude",
+    "lon": "longitude",
+    "long": "longitude",
+    "label": "label",
+    "final_label": "label",
+    "class": "label",
+    "target": "label",
+    "hotspot_id": "hotspot_id",
+    "hotspot_uid": "hotspot_id",
+    "id": "hotspot_id",
+}
+
 
 def _extract_coords(row: dict) -> tuple[float, float] | None:
     lat = row.get("latitude") or row.get("lat")
@@ -69,7 +101,18 @@ def _coerce_features(row: dict) -> dict[str, float]:
 def load_historical_csv(path: Path) -> list[dict]:
     """Parse an enriched CSV into seed rows (43 features + coords + label)."""
     df = pd.read_csv(path)
-    df.columns = [c.strip() for c in df.columns]
+    df.columns = [str(c).strip() for c in df.columns]
+    # Normalize alias headers (coords/label/id) to canonical names,
+    # case-insensitively; never clobber an already-canonical column.
+    cols_lower = {c.lower(): c for c in df.columns}
+    canonical: set[str] = set(df.columns)
+    rename: dict[str, str] = {}
+    for alias, target in _ALIASES.items():
+        src = cols_lower.get(alias)
+        if src is not None and target not in canonical:
+            rename[src] = target
+            canonical.add(target)
+    df.rename(columns=rename, inplace=True)
     rows: list[dict] = []
     for i, raw in df.iterrows():
         row = raw.to_dict()
@@ -79,16 +122,22 @@ def load_historical_csv(path: Path) -> list[dict]:
             continue
         feats = _coerce_features(row)
         if len(feats) < len(CLASSIFIER_FEATURES) // 2:
-            logger.warning("row %d: <50%% of classifier features present — skipped", i)
+            logger.warning(
+                "row %d: <50%% of classifier features present (%d/%d) — skipped",
+                i,
+                len(feats),
+                len(CLASSIFIER_FEATURES),
+            )
             continue
-        label = row.get("label") or row.get("class") or row.get("target")
+        label = row.get("label")
+        uid = row.get("hotspot_id")
         rows.append(
             {
                 "latitude": coords[0],
                 "longitude": coords[1],
                 "features": feats,
                 "label": str(label).strip() if label else None,
-                "hotspot_uid": str(row.get("hotspot_id") or f"hist-{i + 1:04d}"),
+                "hotspot_uid": str(uid) if uid else f"hist-{i + 1:04d}",
             }
         )
     return rows
@@ -172,6 +221,8 @@ async def seed_if_empty(session: AsyncSession) -> int:
 
     csv_path = os.environ.get("PYROSENSE_HISTORICAL_CSV")
     if existing == 0:
+        if not csv_path and (DEFAULT_HISTORICAL_CSV).exists():
+            csv_path = str(DEFAULT_HISTORICAL_CSV)
         if csv_path and Path(csv_path).exists():
             rows = load_historical_csv(Path(csv_path))
             dataset_version = DATASET_VERSION

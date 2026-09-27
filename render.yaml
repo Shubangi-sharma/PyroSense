@@ -23,6 +23,10 @@ services:
         sync: false
       - key: SEED_ON_STARTUP
         value: "true"
+      # Frozen CSV is baked at data/historical_hotspots.csv when present;
+      # this makes the override point explicit for a mounted/renamed file.
+      - key: PYROSENSE_HISTORICAL_CSV
+        value: /srv/data/historical_hotspots.csv
       - key: ENABLE_LIVE_INGEST_SCHEDULER
         value: "false"
 

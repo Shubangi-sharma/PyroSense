@@ -47,6 +47,13 @@ COPY pyrosense_ml/tests/fixtures ./pyrosense_ml/tests/fixtures
 COPY data_science ./data_science
 COPY FINAL_GRADIENT_BOOSTING_MODEL.pkl ./FINAL_GRADIENT_BOOSTING_MODEL.pkl
 
+# Frozen historical-hotspot CSV (43 features + coords + label), when present.
+# The tracked data/.example file keeps this COPY always resolvable (BuildKit
+# fails a zero-match glob); the real CSV is gitignored — drop it at
+# data/historical_hotspots.csv (or set PYROSENSE_HISTORICAL_CSV) and startup
+# seeds from it instead of the SQLite fallback.
+COPY data/ /srv/data/
+
 ENV PYTHONPATH=/srv/pyrosense_ml
 WORKDIR /srv/pyrosense_ml
 

@@ -80,3 +80,6 @@ next-env.d.ts
 # Phase 1: keep raw datasets out of data_science/
 data_science/**/*.npy
 data_science/**/raw_data/
+
+# Frozen historical CSV is data, not code — keep the template, ignore the real one.
+data/historical_hotspots.csv
