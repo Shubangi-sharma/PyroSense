@@ -46,4 +46,4 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
   CMD curl -sf http://localhost:5000/health || exit 1
 
-CMD ["/srv/pyrosense_ml/.venv/bin/python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5000"]
+CMD ["/srv/pyrosense_ml/.venv/bin/python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5000", "--loop", "asyncio"]
