@@ -15,8 +15,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # pointer, exit 139) right after model load. Cap every thread pool explicitly
 # and disable oneDNN's custom ops (see docs on TF thread env vars).
 ENV OMP_NUM_THREADS=1 \
-    TF_NUM_INTRAOPS_THREADS=1 \
-    TF_NUM_INTEROPS_THREADS=1 \
+    TF_NUM_INTRAOP_THREADS=1 \
+    TF_NUM_INTEROP_THREADS=1 \
     TF_ENABLE_ONEDNN_OPTS=0
 
 # tensorflow needs libgomp; psycopg needs libpq; curl for healthchecks.
