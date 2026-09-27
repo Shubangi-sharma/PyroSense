@@ -85,8 +85,10 @@ async def lifespan(app: FastAPI):
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.execute(text("SELECT 1"))
+        logger.info("db: SELECT 1 ok (first real async socket I/O)")
         try:
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
+            logger.info("db: postgis extension created (or already present)")
         except Exception:
             await conn.rollback()
             logger.info(
@@ -94,11 +96,14 @@ async def lifespan(app: FastAPI):
             )
         # Alembic owns migrations in prod; dev/bootstrap creates tables directly.
         await conn.run_sync(Base.metadata.create_all)
+        logger.info("db: schema ensure (create_all) ok")
 
     factory = get_session_factory()
+    logger.info("db: session factory created")
     async with factory() as session:
         if settings.SEED_ON_STARTUP:
             await seed_if_empty(session)
+            logger.info("db: seed_if_empty returned")
 
     # 3. Optional FIRMS live-ingest scheduler (Node.js cron remains primary).
     ingest_task: asyncio.Task | None = None
