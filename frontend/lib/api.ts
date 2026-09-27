@@ -16,7 +16,14 @@
 /* ------------------------------------------------------------------ */
 
 export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") || "http://localhost:4000";
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") ||
+  // Production default: the deployed Render backend. NEXT_PUBLIC_ vars are
+  // inlined at BUILD time, so a Vercel deploy without the env var set used to
+  // fall back to localhost:4000 — unreachable from every visitor's browser.
+  // Local dev keeps overriding via .env.local.
+  (process.env.NODE_ENV === "production" && process.env.VERCEL
+    ? "https://pyrosense-2aif.onrender.com"
+    : "http://localhost:4000");
 
 /* ------------------------------------------------------------------ */
 /* DTOs (mirror the backend's controllers — keep both sides in sync)    */
