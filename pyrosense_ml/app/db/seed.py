@@ -99,12 +99,24 @@ def derive_from_sqlite(min_detections: int = 5, limit: int = 552) -> list[dict]:
 
     These are NOT a frozen dataset — they are what the current 3-day NRT
     window supports, marked with a distinct dataset_version.
+
+    Returns [] when the Node backend's SQLite DB is absent (e.g. the ML
+    container on Render has never had it) — seeding degrades to a no-op and
+    the service boots normally.
     """
     from collections import defaultdict
 
     from app.db.engine import sqlite_connect_readonly
 
-    con = sqlite_connect_readonly()
+    try:
+        con = sqlite_connect_readonly()
+    except FileNotFoundError as exc:
+        logger.warning(
+            "skipping SQLite-fallback seeding: %s — starting with an empty "
+            "hotspots table (live predictions will create hotspots on demand)",
+            exc,
+        )
+        return []
     try:
         rows = con.execute(
             "SELECT lat, lng, frp, acq_date FROM firms_detections ORDER BY acq_date"
@@ -169,7 +181,12 @@ async def seed_if_empty(session: AsyncSession) -> int:
             rows = derive_from_sqlite()
             dataset_version = SQLITE_FALLBACK_VERSION
         seeded = await _seed_rows(session, rows, dataset_version)
-        logger.info("seeded %d historical hotspots (dataset=%s)", seeded, dataset_version)
+        logger.info(
+            "seeded %d historical hotspots (dataset=%s, source=%s)",
+            seeded,
+            dataset_version,
+            "csv" if csv_path and Path(csv_path).exists() else "sqlite-fallback",
+        )
         return seeded
     return 0
 

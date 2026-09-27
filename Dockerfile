@@ -10,6 +10,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
+# TensorFlow/oneDNN thread pools assume bare-metal cores; on Render's cgroup-
+# limited CPUs they over-subscribe and crash the process (free(): invalid
+# pointer, exit 139) right after model load. Cap every thread pool explicitly
+# and disable oneDNN's custom ops (see docs on TF thread env vars).
+ENV OMP_NUM_THREADS=1 \
+    TF_NUM_INTRAOPS_THREADS=1 \
+    TF_NUM_INTEROPS_THREADS=1 \
+    TF_ENABLE_ONEDNN_OPTS=0
+
 # tensorflow needs libgomp; psycopg needs libpq; curl for healthchecks.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 libpq5 curl \
