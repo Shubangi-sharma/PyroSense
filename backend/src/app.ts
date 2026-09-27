@@ -62,6 +62,11 @@ export function createApp(): Express {
   // the shared /api limiter applying once here.
   app.use(v1Router);
 
+  // Root identity probe — nicer for uptime monitors than a bare 404.
+  app.get("/", (_req, res) => {
+    res.json({ service: "pyrosense-backend", status: "ok" });
+  });
+
   app.use(notFoundHandler);
   app.use(errorHandler);
 
