@@ -19,6 +19,21 @@ ENV OMP_NUM_THREADS=1 \
     TF_NUM_INTEROP_THREADS=1 \
     TF_ENABLE_ONEDNN_OPTS=0
 
+# gRPC ships inside TensorFlow and installs its own native epoll poller
+# at import time. In a cgroup-limited container that poller can corrupt
+# the heap the moment asyncio (asyncpg's Postgres connection) does its
+# own first real socket I/O right after TF has been imported — the
+# "free(): invalid pointer" this deploy hits right after model load
+# finishes. Force gRPC onto its plain poll() backend, disable its fork
+# handlers, and cap the BLAS/oneDNN thread pools the vars above don't
+# reach (scikit-learn's legacy GBM pipeline and numpy both use these).
+ENV GRPC_POLL_STRATEGY=poll \
+    GRPC_ENABLE_FORK_SUPPORT=0 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 \
+    VECLIB_MAXIMUM_THREADS=1
+
 # tensorflow needs libgomp; psycopg needs libpq; curl for healthchecks.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 libpq5 curl \
