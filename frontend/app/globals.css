@@ -11,6 +11,12 @@ body {
   height: 100%;
 }
 
+:root {
+  --font-space-grotesk: "Segoe UI", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+  --font-inter: "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-jetbrains-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
 body {
   @apply bg-bg-void text-text-primary font-body antialiased;
   overscroll-behavior: none;
