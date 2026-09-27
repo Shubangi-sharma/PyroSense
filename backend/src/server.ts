@@ -14,6 +14,7 @@ import { refreshLive } from "./jobs/refreshLiveFirms.js";
 import { runMatchingJob } from "./jobs/runMatching.js";
 import { updateFingerprints } from "./services/fingerprintService.js";
 import { triggerPipeline } from "./services/mlClient.js";
+import { bootstrapOnce } from "./jobs/bootstrapOnce.js";
 import cron from "node-cron";
 
 const log = logger.child({ module: "server" });
@@ -42,6 +43,10 @@ async function runPipeline(): Promise<void> {
     log.error({ err: String(err) }, "pipeline failed");
   }
 }
+
+// Fresh-deploy bootstrap: seed facilities + first refresh (fire-and-forget,
+// never blocks the listen — see jobs/bootstrapOnce.ts).
+bootstrapOnce();
 
 const server = app.listen(env.PORT, "0.0.0.0", () => {
   log.info({ port: env.PORT, host: "0.0.0.0", cors: env.CORS_ORIGIN }, "PYROSENSE backend listening");

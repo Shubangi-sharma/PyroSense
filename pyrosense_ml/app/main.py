@@ -157,6 +157,12 @@ def create_app() -> FastAPI:
         allow_credentials=False,
     )
     app.include_router(api_router)
+
+    @app.get("/")
+    def root():
+        """Root identity probe — nicer for uptime monitors than a bare 404."""
+        return {"service": "pyrosense-ml", "status": "ok"}
+
     return app
 
 

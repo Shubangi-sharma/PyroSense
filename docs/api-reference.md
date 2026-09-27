@@ -8,6 +8,7 @@ The Node backend orchestrates data and proxies ML calls.
 
 | Method | Endpoint | Purpose |
 |---|---|---|
+| `GET` | `/` | Service identity probe (`{ service, status }`). |
 | `GET` | `/health` | Basic API uptime and health status. |
 | `GET` | `/api/facilities` | Fetches the ingested OSM facility catalogue. |
 | `GET` | `/api/facilities/analyses` | Fetches computed facility risk status and health scores. |
@@ -32,6 +33,7 @@ The FastAPI service owns the prediction pipelines, frozen schemas, and ML persis
 
 | Method | Endpoint | Purpose |
 |---|---|---|
+| `GET` | `/` | Service identity probe (`{ service, status }`). |
 | `POST` | `/predict` | Classifies a live hotspot using engineered features or expert-mode inputs. |
 | `GET` | `/health` | Model versions, PostGIS connection status, and pipeline job status. |
 | `GET` | `/hotspots` | Clusters filtered by source (live/historical) and bounding box. |

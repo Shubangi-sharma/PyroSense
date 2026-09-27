@@ -1,6 +1,7 @@
 # backend build context — npm cache and local state never bake into the image.
 node_modules
 data
+!data/user_facilities.csv
 *.db
 *.db-wal
 *.db-shm
