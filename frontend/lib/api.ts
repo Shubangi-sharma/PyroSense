@@ -8,22 +8,35 @@
  *
  * Auth-free by design: the backend holds every secret; the browser never
  * sees a key. NEXT_PUBLIC_API_BASE_URL is the single knob (default
- * http://localhost:4000).
+ * http://localhost:4000 for local dev; production builds REQUIRE it — see
+ * DEPLOYMENT.md).
  */
 
 /* ------------------------------------------------------------------ */
 /* base url                                                            */
 /* ------------------------------------------------------------------ */
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") ||
-  // Production default: the deployed Render backend. NEXT_PUBLIC_ vars are
-  // inlined at BUILD time, so a Vercel deploy without the env var set used to
-  // fall back to localhost:4000 — unreachable from every visitor's browser.
-  // Local dev keeps overriding via .env.local.
-  (process.env.NODE_ENV === "production" && process.env.VERCEL
-    ? "https://pyrosense-2aif.onrender.com"
-    : "http://localhost:4000");
+function resolveApiBase(): string {
+  const configured = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "");
+  if (configured) return configured;
+
+  // No env var baked into this build. Local dev keeps the localhost default;
+  // a production build (Vercel) refuses to guess: a hardcoded domain here
+  // silently masked the missing-config failure once already. NEXT_PUBLIC_*
+  // vars are inlined at BUILD time — set the var in Vercel Project Settings
+  // → Environment Variables and REDEPLOY (see DEPLOYMENT.md §2).
+  if (process.env.NODE_ENV === "production" && process.env.VERCEL) {
+    throw new Error(
+      "[api] NEXT_PUBLIC_API_BASE_URL is not set in this build. " +
+        "Set it in Vercel → Settings → Environment Variables (Production + " +
+        "Preview) and redeploy — changing the var alone does nothing because " +
+        "NEXT_PUBLIC_* values are inlined at build time. See DEPLOYMENT.md §2.",
+    );
+  }
+  return "http://localhost:4000";
+}
+
+export const API_BASE = resolveApiBase();
 
 /* ------------------------------------------------------------------ */
 /* DTOs (mirror the backend's controllers — keep both sides in sync)    */

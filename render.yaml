@@ -31,6 +31,9 @@ services:
         value: "false"
 
   # Node.js Backend Service
+  # ⚠️ The live Render service is named `pyrosense-2aif` (created outside the
+  # Blueprint). A Blueprint sync with `name: pyrosense-backend` would create a
+  # NEW service instead of updating it — see DEPLOYMENT.md before syncing.
   - type: web
     name: pyrosense-backend
     env: docker
@@ -39,11 +42,21 @@ services:
     plan: standard
     disk:
       name: backend-data
-      mountPath: /data
+      # Must match DATABASE_URL's directory below (/var/data/pyrosense.db).
+      # NOTE: disks require a paid instance type — on the free plan this block
+      # is unusable and the SQLite file stays ephemeral (bootstrapOnce re-seeds
+      # it on boot).
+      mountPath: /var/data
       sizeGB: 1
     envVars:
+      # ⚠️ SQLite FILE PATH (better-sqlite3), NOT a postgres:// URL — pointing
+      # it at the pyrosense-db connection string silently creates an empty DB
+      # (this shipped to prod once). Free plan has NO disks: the file is
+      # ephemeral and bootstrapOnce re-seeds it on every boot; on a paid plan
+      # attach a Disk at /var/data to persist it. The live service currently
+      # uses /var/data/pyrosense.db.
       - key: DATABASE_URL
-        value: /data/pyrosense.db
+        value: /var/data/pyrosense.db
       - key: ML_API_BASE_URL
         fromService:
           type: web
@@ -53,6 +66,9 @@ services:
         sync: false
       - key: OPENROUTER_API_KEY
         sync: false
-      # For production frontend URL (e.g. Vercel)
+      # For production frontend URL (e.g. Vercel). `sync: false` = manual
+      # entry required; leaving it unset silently applies the localhost-only
+      # zod default and breaks the real frontend via CORS. Live value:
+      #   https://pyro-sense.vercel.app,https://pyro-sense-*.vercel.app
       - key: CORS_ORIGIN
         sync: false

@@ -1,0 +1,11 @@
+id,name,lat,lng,type,capacity,operator,boundary_geojson
+UF-001,Jamnagar Refinery Complex,22.3511,69.0714,Refinery,1240000 bpd,Reliance Industries,
+UF-002,Mathura Refinery,27.4950,77.6737,Refinery,160000 bpd,Indian Oil Corporation,
+UF-003,Mundra Thermal Power Station,22.8394,69.7194,Power Plant,4620 MW,Adani Power,
+UF-004,Vindhyachal Super Thermal Power Station,24.0800,82.6700,Power Plant,4760 MW,NTPC,
+UF-005,Tata Steel Jamshedpur Works,22.7870,86.2029,Industrial Site,,Tata Steel,
+UF-006,Bokaro Steel Plant,23.6693,86.1511,Industrial Site,,Steel Authority of India,
+UF-007,Jharia Coalfield,23.7478,86.4132,Mine,,BCCL,
+UF-008,ONGC Ankleshwar Oil Field,21.6264,73.0153,Refinery,,ONGC,
+UF-009,Paradip Refinery,20.2644,86.6724,Refinery,300000 bpd,Indian Oil Corporation,
+UF-010,Ramagundam Super Thermal Power Station,18.7557,79.4500,Power Plant,2600 MW,NTPC,

@@ -11,7 +11,8 @@ node_modules/
 # Environment variables
 .env
 .env.*
-.env.example
+# Env TEMPLATES must ship with the repo (Step 4 durability fix)
+!.env.example
 .env.examples
 .env.local
 .env.development.local
@@ -19,7 +20,9 @@ node_modules/
 .env.production.local
 
 # Database files
-backend/data/
+# Contents only — the seed CSV inside must stay tracked (Dockerfile COPYs it;
+# untracked, every Render build from a pristine clone fails at COPY).
+backend/data/*
 *.db
 *.db-journal
 *.db-wal
