@@ -69,12 +69,29 @@ export function bootstrapOnce(): void {
 
     // 3. Archive backfill — keeps a disk-wiped (free-plan) deployment useful
     // immediately after every spin-up. Skipped when ARCHIVE_BACKFILL_DAYS=0
-    // or enough rows already survived (persisted disk / lucky warm boot).
-    if (env.ARCHIVE_BACKFILL_DAYS > 0 && getCoverage().rows < env.ARCHIVE_BACKFILL_MIN_ROWS) {
+    // or the stored history is already deep enough (persisted disk / lucky
+    // warm boot). Depth is measured by DATE SPAN, not row count: two days of
+    // live global data already yield ~90k rows, which would defeat any sane
+    // row-count threshold while still lacking baseline history.
+    const afterRefresh = getCoverage();
+    const spanDays =
+      afterRefresh.minDate && afterRefresh.maxDate
+        ? Math.round(
+            (new Date(afterRefresh.maxDate).getTime() - new Date(afterRefresh.minDate).getTime()) / 86_400_000,
+          )
+        : 0;
+    const shallowSpan = spanDays < env.ARCHIVE_BACKFILL_DAYS - 1;
+    if (env.ARCHIVE_BACKFILL_DAYS > 0 && (afterRefresh.rows < env.ARCHIVE_BACKFILL_MIN_ROWS || shallowSpan)) {
       try {
         log.info(
-          { days: env.ARCHIVE_BACKFILL_DAYS, minRows: env.ARCHIVE_BACKFILL_MIN_ROWS },
-          "bootstrap: detections below threshold — starting archive backfill",
+          {
+            days: env.ARCHIVE_BACKFILL_DAYS,
+            minRows: env.ARCHIVE_BACKFILL_MIN_ROWS,
+            coverage: afterRefresh,
+            spanDays,
+            shallowSpan,
+          },
+          "bootstrap: history shallower than target — starting archive backfill",
         );
         await ingestArchive(env.ARCHIVE_BACKFILL_DAYS);
         const matchResult = await runMatchingJob();

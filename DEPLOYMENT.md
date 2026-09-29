@@ -62,10 +62,12 @@ deploy (dashboard → Manual Deploy, or `POST /v1/services/{id}/deploys`).
   storage: every deploy/spin-down wipes facilities + detections. Two
   counter-measures ship in the repo:
   1. **Boot-time backfill** (`backend/src/jobs/bootstrapOnce.ts`): when
-     detections are below `ARCHIVE_BACKFILL_MIN_ROWS` (default 50k), the
-     startup job re-hydrates `ARCHIVE_BACKFILL_DAYS` (default 10) of FIRMS
-     archive data + runs matching — a fresh boot serves real classified data
-     in ~2 minutes. Set `ARCHIVE_BACKFILL_DAYS=0` to disable.
+     detections are below `ARCHIVE_BACKFILL_MIN_ROWS` (default 50k) OR the
+     stored date span is shallower than `ARCHIVE_BACKFILL_DAYS` (default 10;
+     two live global days already exceed 90k rows, so the span check is what
+     catches a wiped disk), the startup job re-hydrates the FIRMS archive +
+     runs matching — a fresh boot serves fully classified data in ~2
+     minutes. Set `ARCHIVE_BACKFILL_DAYS=0` to disable.
   2. **Keep-warm pinger** (`.github/workflows/keep-warm.yml`): pings both
      services' `/health` every 14 min (inside the ~15-min spin-down window)
      so the disk rarely gets wiped at all. Latency optimizer only — the app
