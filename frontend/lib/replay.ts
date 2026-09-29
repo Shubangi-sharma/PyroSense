@@ -6,12 +6,12 @@
  * Replay walks REAL detections (FIRMS acquisition timestamps) for ONE
  * facility, oldest → newest. One shared `ReplayState` drives every replayed
  * surface at once — map marker filter, replay label, incident timeline
- * highlight, and the "Today's assessment" health panel — so they never
+ * highlight, and the "Today's assessment" score panel — so they never
  * disagree.
  *
  * Honesty rule (B3): replay shows real detections and FRP values only.
- * Historical health scores are NOT recomputed (the stored baseline math is
- * defined against today's clock); the health panel explicitly labels its
+ * Historical Risk Scores are NOT recomputed (the stored baseline math is
+ * defined against today's clock); the score panel explicitly labels its
  * value "Today's assessment" during replay. No invented history.
  */
 

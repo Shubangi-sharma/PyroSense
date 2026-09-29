@@ -21,7 +21,7 @@ export async function getSummary(req: Request, res: Response): Promise<void> {
   }
 
   try {
-    const { facts, narrative } = analyzeFacility(facility, new Date());
+    const { facts, narrative } = await analyzeFacility(facility, new Date());
 
     // With no AI provider configured, the templated summary IS the product.
     if (!hasAiProvider()) {
@@ -35,7 +35,7 @@ export async function getSummary(req: Request, res: Response): Promise<void> {
     // Graceful degradation (§6): the endpoint never errors where a summary
     // should be — worst case it serves the deterministic template.
     req.app.get("log")?.warn({ err: String(err), facilityId: id }, "summary generation failed; serving template");
-    const { narrative } = analyzeFacility(facility, new Date());
+    const { narrative } = await analyzeFacility(facility, new Date());
     res.status(200).json({ facilityId: id, text: narrative.templatedSummary, provider: "template" });
   }
 }

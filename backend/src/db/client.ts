@@ -325,6 +325,48 @@ const allBaselinesStmt = db.prepare(`SELECT * FROM facility_baselines`);
 
 export const getAllBaselines = (): BaselineRow[] => allBaselinesStmt.all() as BaselineRow[];
 
+/* ── facility_risk_cache (unified Risk Score components) ──────────────── */
+
+/** Cached ML-derived Risk Score components for one facility (see schema.ts). */
+export interface FacilityRiskCacheRow {
+  facility_id: string;
+  environment_signal: number | null;
+  temporal_signal: number | null;
+  /** "raw_probabilities" (nightly GRU run) or "overall_bucket_fallback". */
+  temporal_source: string | null;
+  computed_at: string;
+}
+
+const upsertRiskCacheStmt = db.prepare(`
+  INSERT INTO facility_risk_cache (facility_id, environment_signal, temporal_signal, temporal_source, computed_at)
+  VALUES (@facility_id, @environment_signal, @temporal_signal, @temporal_source, @computed_at)
+  ON CONFLICT(facility_id) DO UPDATE SET
+    environment_signal = excluded.environment_signal,
+    temporal_signal = excluded.temporal_signal,
+    temporal_source = excluded.temporal_source,
+    computed_at = excluded.computed_at
+`);
+
+export const upsertFacilityRiskCache = (r: {
+  facility_id: string;
+  environment_signal: number | null;
+  temporal_signal: number | null;
+  temporal_source: string | null;
+  computed_at: string;
+}): void => {
+  upsertRiskCacheStmt.run(r);
+};
+
+const allRiskCacheStmt = db.prepare(`SELECT * FROM facility_risk_cache`);
+
+export const getAllFacilityRiskCache = (): FacilityRiskCacheRow[] =>
+  allRiskCacheStmt.all() as FacilityRiskCacheRow[];
+
+const riskCacheByIdStmt = db.prepare(`SELECT * FROM facility_risk_cache WHERE facility_id = ?`);
+
+export const getFacilityRiskCache = (facilityId: string): FacilityRiskCacheRow | null =>
+  (riskCacheByIdStmt.get(facilityId) as FacilityRiskCacheRow | undefined) ?? null;
+
 /* ── dataset-wide stats (command view) ────────────────────────────────── */
 
 const dbStatsStmt = db.prepare(`

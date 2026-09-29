@@ -143,11 +143,11 @@ export default function DashboardPage() {
     [router],
   );
 
-  /* top facilities needing attention */
+  /* top facilities needing attention (unified Risk Score, higher = more risk) */
   const topFacilities = useMemo(
     () =>
       [...analyses]
-        .sort((a, b) => RANK[a.status] - RANK[b.status] || b.score - a.score)
+        .sort((a, b) => RANK[a.status] - RANK[b.status] || b.riskScore - a.riskScore)
         .slice(0, 6),
     [analyses],
   );
@@ -279,7 +279,7 @@ export default function DashboardPage() {
                         {a.facility.name}
                       </p>
                       <p className="mt-0.5 truncate font-mono text-[10px] text-text-tertiary">
-                        {a.facility.type} · {a.detectionCount} det · HS {a.score}
+                        {a.facility.type} · {a.detectionCount} det · risk {a.riskScore}
                         {a.latestFrp != null ? ` · ${a.latestFrp.toFixed(0)} MW` : ""}
                       </p>
                     </div>
@@ -324,8 +324,7 @@ export default function DashboardPage() {
                     <th className="px-4 py-2.5 font-medium">#</th>
                     <th className="px-4 py-2.5 font-medium">Facility</th>
                     <th className="px-4 py-2.5 font-medium">Status</th>
-                    <th className="px-4 py-2.5 font-medium text-right">Health</th>
-                    <th className="px-4 py-2.5 font-medium text-right">Risk</th>
+                    <th className="px-4 py-2.5 font-medium text-right">Risk Score</th>
                     <th className="hidden px-4 py-2.5 font-medium sm:table-cell">Classification</th>
                   </tr>
                 </thead>
@@ -353,9 +352,12 @@ export default function DashboardPage() {
                         <td className="px-4 py-3">
                           <StatusBadge status={fac.status as RiskStatus} />
                         </td>
-                        <td className="px-4 py-3 text-right font-mono text-xs text-text-primary">{fac.healthScore}</td>
                         <td className="px-4 py-3 text-right">
-                          <span className="font-mono text-xs font-semibold" style={{ color: hex }}>
+                          <span
+                            className="font-mono text-xs font-semibold"
+                            style={{ color: hex }}
+                            title={`Signals: ${fac.riskScoreProvenance.join(" + ")} · ${fac.riskScoreLive ? "live, just computed" : `as of ${new Date(fac.riskScoreComputedAt).toISOString().slice(0, 16).replace("T", " ")} UTC`}`}
+                          >
                             {fac.riskScore}
                           </span>
                         </td>

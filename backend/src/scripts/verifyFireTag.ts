@@ -1,10 +1,10 @@
 /**
- * Synthetic verification for the v2 health score + contextual fire tagging.
+ * Synthetic verification for the v2 base-signal score + contextual fire tagging.
  *
  * Run: npm run verify:firetag   (from backend/)
  *
  * Proves, with pure math (no DB / network):
- *   1. Health score — quiet sites stay 100; evidence discount makes thin
+ *   1. Base-signal score — quiet sites stay 90; evidence discount makes thin
  *      windows score cautiously; log-magnitude no longer saturates on a
  *      single outlier; the graded quantity is the LIVE window (not all
  *      history); trend penalties need a trusted baseline.
@@ -16,7 +16,7 @@
  */
 
 import {
-  computeHealthScore,
+  computeBaseScore,
   classifyFromDetections,
 } from "../services/scoringService.js";
 import type { DetectionRow } from "../db/client.js";
@@ -70,13 +70,13 @@ function det(
 }
 
 const TODAY = new Date("2026-09-15T00:00:00Z");
-const hs = (o: Parameters<typeof computeHealthScore>[0]) => computeHealthScore(o);
+const hs = (o: Parameters<typeof computeBaseScore>[0]) => computeBaseScore(o);
 
-console.log("\n── thermal health score v2 ──────────────────────────────────");
+console.log("\n── base-signal score v2 ──────────────────────────────────");
 
-// ── 1. Quiet stays quiet (HEALTHY_BASELINE = 90, the documented floor) ───
+// ── 1. Quiet stays quiet (QUIET_BASELINE = 90, the documented floor) ───
 check(
-  "empty live window → 90 (HEALTHY_BASELINE)",
+  "empty live window → 90 (QUIET_BASELINE)",
   hs({
     liveCount: 0, liveMeanFrp: 0, livePeakFrp: 0, cvFrp: 0, spreadKm: 0,
     newestAgeDays: 99, liveUniqueDays: 0, frpRatioVsBaseline: 0,
@@ -292,7 +292,7 @@ console.log("\n── contextual fire tagging ───────────�
     c.liveSpreadKm > 0 && c.uniqueHistoryDays === 3 && c.nightRatio === 0,
   );
   check(
-    "health score from classifyFromDetections stays in [0, 100]",
+    "base-signal score from classifyFromDetections stays in [0, 100]",
     c.score >= 0 && c.score <= 100,
   );
 }

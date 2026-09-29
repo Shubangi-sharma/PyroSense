@@ -75,11 +75,20 @@ export function getFacilitiesCached<T extends object>(loader: () => T): T {
   return value;
 }
 
-/** Through-cache for computed analyses (keyed by region + time window). */
-export function getAnalysesCached<T extends object>(key: string, loader: () => T): T {
+/**
+ * Through-cache for computed analyses (keyed by region + time window).
+ * Async-aware: the loader may be sync or async (analyses now compose the
+ * unified Risk Score, whose bulk path awaits a cache-table read). The cache
+ * stores the RESOLVED value — a rejected loader is never cached, so a
+ * transient failure does not poison the TTL window.
+ */
+export async function getAnalysesCached<T extends object>(
+  key: string,
+  loader: () => T | Promise<T>,
+): Promise<T> {
   const hit = analysisCache.get(key);
   if (hit !== undefined) return hit as T;
-  const value = loader();
+  const value = await loader();
   analysisCache.set(key, value);
   return value;
 }

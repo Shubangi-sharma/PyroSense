@@ -15,6 +15,7 @@
 import { Router } from "express";
 import express from "express";
 import { LRUCache } from "lru-cache";
+import h3 from "h3-js";
 import { z } from "zod";
 import {
   fetchCellRisk,
@@ -25,6 +26,7 @@ import {
   triggerPipeline,
   type MlHotspotSummary,
 } from "../services/mlClient.js";
+import { computeHotspotRiskScore } from "../services/riskScoreService.js";
 import { httpLog } from "../lib/logger.js";
 
 export const v1Router = Router();
@@ -208,6 +210,37 @@ v1Router.post("/api/v1/pipeline/run", express.json({ limit: "8kb" }), async (req
     return;
   }
   res.json({ report, meta: meta() });
+});
+
+/* ── GET /api/v1/risk-score?lat=…&lng=… — unified Risk Score for a point ── */
+/**
+ * The unified Risk Score for an arbitrary point (hotspot views): base(FRP
+ * anomalies near the point via classifyFromDetections) + environment(live
+ * classification risk) + temporal(stored GRU prediction for the H3-r7 cell).
+ * An unregistered hotspot has no facility detection history, so its base
+ * component is legitimately thin — the UI labels this case (§2.6 of
+ * docs/RISK_SCORE_UNIFICATION.md).
+ */
+v1Router.get("/api/v1/risk-score", async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    res.status(400).json({ error: "lat and lng are required as finite numbers" });
+    return;
+  }
+
+  // Hotspot composition: environment + temporal only — an unregistered
+  // point has no facility detection history to anchor a base signal (§2.6).
+  const risk = await computeHotspotRiskScore(lat, lng);
+
+  res.json({
+    latitude: lat,
+    longitude: lng,
+    h3_cell: h3.latLngToCell(lat, lng, 7),
+    ...risk,
+    scope: "hotspot",
+    meta: meta(),
+  });
 });
 
 /* ── GET /api/v1/cells/:h3 — one cell: hotspots + 1/3/7-day risk + overall ── */

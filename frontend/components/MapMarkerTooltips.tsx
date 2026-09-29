@@ -76,7 +76,7 @@ export function FacilityTooltipContent({
 }: {
   analysis: FacilityAnalysis;
 }) {
-  const { facility, status, score, latestFrp, nearestKm, detectionCount } = analysis;
+  const { facility, status, riskScore, latestFrp, nearestKm, detectionCount } = analysis;
   const hex = statusColorHex(status);
 
   return (
@@ -104,10 +104,10 @@ export function FacilityTooltipContent({
       >
         <div className="flex items-center justify-between gap-3">
           <span className="font-body text-[10px] font-semibold uppercase tracking-widest text-text-tertiary">
-            Health score
+            Risk Score
           </span>
           <span className="font-mono text-sm font-bold" style={{ color: hex }}>
-            {score}
+            {riskScore}
             <span className="text-text-tertiary">/100</span>
           </span>
         </div>

@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 import { ArrowLeft, Map as MapIcon, Satellite } from "lucide-react";
 import { StatusBadge } from "@/lib/status";
 import SignalQualityBadge from "@/components/SignalQualityBadge";
-import HealthScoreRing from "@/components/HealthScoreRing";
+import RiskScoreRing from "@/components/RiskScoreRing";
 import WhatChangedPanel from "@/components/WhatChangedPanel";
 import AiSummaryBlock from "@/components/AiSummaryBlock";
 import IncidentTimeline from "@/components/IncidentTimeline";
@@ -204,10 +204,13 @@ export default function FacilityDetailPage() {
 
         {/* 2-column body */}
         <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
-          {/* LEFT: health + locator */}
+          {/* LEFT: risk + locator */}
           <div className="flex flex-col gap-6">
             <section className="dash-card flex flex-col items-center gap-5 rounded-xl p-6">
-              <HealthScoreRing score={c.score} status={status} />
+              <RiskScoreRing
+                score={analysis.riskScore?.riskScore ?? c.score}
+                status={status}
+              />
               <SignalQualityBadge split={c.liveConfidenceSplit} />
               <div className="grid w-full grid-cols-2 gap-3">
                 <MonoStat

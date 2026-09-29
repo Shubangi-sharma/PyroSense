@@ -358,6 +358,47 @@ class HotspotCluster(Base):
     )
 
 
+class FacilityRiskCache(Base):
+    """Per-facility cached components of the unified Risk Score.
+
+    Node PUSHES its exact facility set via POST /internal/facility-risk/sync
+    (the ML service never derives its own facility list — the facility-set
+    mismatch problem is structurally resolved: we answer for exactly the ids
+    Node sends). Two row states:
+
+    - registered (computed_at IS NULL): coords stored, components pending —
+      the nightly facility_risk pipeline stage will fill them;
+    - computed (computed_at set): environment_signal (ML classification-risk,
+      weather+land+OSM informed) and temporal_signal (GRU 1/3/7-day mean for
+      the facility's H3-r7 cell) are populated and served back on the next
+      sync read.
+
+    Only computed rows travel back to Node; uncomputed facilities simply have
+    no row there and compose base-only (documented degraded mode).
+    """
+
+    __tablename__ = "facility_risk_cache"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    facility_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+
+    environment_signal: Mapped[float | None] = mapped_column(Float, nullable=True)
+    temporal_signal: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # "raw_probabilities" (GRU horizon mean) or "overall_bucket_fallback".
+    temporal_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    computed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_facility_risk_cache_computed_at", "computed_at"),
+    )
+
+
 class PipelineJobRun(Base):
     """One row per pipeline stage run — powers /internal/health."""
 

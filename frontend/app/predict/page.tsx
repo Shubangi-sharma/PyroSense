@@ -664,10 +664,17 @@ export default function PredictPage() {
                               {result.risk_score.toFixed(1)}
                             </span>
                             <span className="mt-1 text-[10px] uppercase tracking-wider text-text-tertiary">
-                              Classification risk
+                              Risk Score
                             </span>
                             <span className="mt-0.5 text-[9px] leading-tight text-text-tertiary">
-                              weighted-probability derived
+                              higher = more risk
+                            </span>
+                            <span
+                              className="mt-1 max-w-[140px] text-center text-[9px] leading-tight text-text-tertiary"
+                              title="Hotspot scope: based on classification + temporal signals only — no registered facility history at this point."
+                            >
+                              based on classification + temporal signals only —
+                              no registered facility history at this point
                             </span>
                           </>
                         )}

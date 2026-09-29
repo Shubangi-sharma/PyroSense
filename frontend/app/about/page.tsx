@@ -86,7 +86,7 @@ export default function AboutPage() {
               </p>
               <p className="mt-1.5">
                 FIRMS ingestion, OSM facility matching, thermal fingerprinting,
-                What-Changed analysis, risk/health scoring, grounded GenAI
+                What-Changed analysis, unified Risk Score, grounded GenAI
                 narratives, and the ML proxy.
               </p>
             </InfoCard>

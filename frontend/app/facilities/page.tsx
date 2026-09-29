@@ -98,7 +98,7 @@ const FacilityCard = React.memo(function FacilityCard({
         {f.type} · {f.source === "osm" ? "OpenStreetMap" : f.source}
       </p>
       <div className="relative mt-auto flex items-baseline gap-3 pt-1 font-mono text-xs">
-        <span style={{ color: hex }}>HS {analysis.score}</span>
+        <span style={{ color: hex }}>risk {analysis.riskScore}</span>
         <span className="text-text-tertiary">
           {analysis.detectionCount > 0
             ? `${analysis.detectionCount} det`
@@ -131,7 +131,7 @@ function FacilitiesBody() {
         return true;
       })
       .sort(
-        (a, b) => SEVERITY_RANK[a.status] - SEVERITY_RANK[b.status] || a.score - b.score,
+        (a, b) => SEVERITY_RANK[a.status] - SEVERITY_RANK[b.status] || b.riskScore - a.riskScore,
       );
   }, [analyses, query, statusFilter, typeFilter]);
 

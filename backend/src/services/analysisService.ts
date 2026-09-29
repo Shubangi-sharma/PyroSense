@@ -27,6 +27,13 @@ import {
 import { SummaryFacts } from "./facts.js";
 import { parseBaseline, type FingerprintBaseline } from "./fingerprintService.js";
 import {
+  baseSignalFromScore,
+  composeCachedRiskScore,
+  computeRiskScoreLive,
+  loadCachedRiskComponents,
+  type RiskScoreResult,
+} from "./riskScoreService.js";
+import {
   classify as classifyThermal,
   buildClassificationSignals,
   CLASSIFICATION_LABELS,
@@ -44,7 +51,19 @@ import {
 export interface FacilityAnalysis {
   facility: FacilityRow;
   status: RiskStatus;
-  score: number;
+  /**
+   * Unified Risk Score — 0–100, HIGHER = MORE RISK (the single score concept;
+   * formerly the inverted "Thermal Health Score"). Composed by
+   * riskScoreService from base(FRP-anomaly) + environment(ML classification)
+   * + temporal(GRU) signals with provenance; see riskScoreService.ts.
+   */
+  riskScore: number;
+  /** Which signals actually contributed ("base"|"environment"|"temporal"). */
+  riskScoreProvenance: string[];
+  /** ISO timestamp of the newest contributing signal. */
+  riskScoreComputedAt: string;
+  /** true = live composition; false = cached composition (bulk path). */
+  riskScoreLive: boolean;
   latestFrp: number | null;
   latestTimestampUtc: string | null;
   nearestKm: number | null;
@@ -104,7 +123,8 @@ export interface FacilityNarrative {
   templatedSummary: string;
   classification?: ThermalClassification;
   classificationLabel?: string;
-  riskScore?: number;
+  /** Unified Risk Score block (0–100, higher = more risk) with provenance. */
+  riskScore: RiskScoreResult;
 }
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
@@ -150,10 +170,10 @@ const TILE_DEG = 1.0;
 /** pad in degrees ≈ 11 km — covers the 5 km corroboration radius + slack */
 const TILE_PAD_DEG = 0.1;
 
-export function analyzeAllFacilities(
+export async function analyzeAllFacilities(
   todayUtc: Date,
   bbox?: { west: number; south: number; east: number; north: number },
-): FacilityAnalysis[] {
+): Promise<FacilityAnalysis[]> {
   let facilities = getAllFacilitiesMerged();
   if (bbox) {
     facilities = facilities.filter(
@@ -180,6 +200,12 @@ export function analyzeAllFacilities(
   const fromDate = dateDaysAgo(HISTORY_WINDOW_DAYS, todayUtc);
   const toDate = todayUtc.toISOString().slice(0, 10);
 
+  // Bulk Risk Score components: the cached ML-derived (environment +
+  // temporal) signals pushed by pyrosense_ml's nightly pipeline. One table
+  // read for the whole request — never a per-facility ML call (the base
+  // signal is computed locally from stored detections either way).
+  const riskCache = await loadCachedRiskComponents();
+
   const out: FacilityAnalysis[] = [];
   for (const [key, group] of tiles) {
     const [tLat, tLng] = key.split(",").map(Number);
@@ -204,10 +230,21 @@ export function analyzeAllFacilities(
         todayUtc,
         radiusKm: FACILITY_RADIUS_KM,
       });
+      const cached = riskCache?.byFacilityId.get(f.id) ?? null;
+      const risk = composeCachedRiskScore(baseSignalFromScore(c.score), cached
+        ? {
+            environment: cached.environment ?? undefined,
+            temporal: cached.temporal ?? undefined,
+            computedAt: cached.computedAt,
+          }
+        : null);
       out.push({
         facility: f,
         status: c.status,
-        score: c.score,
+        riskScore: risk.riskScore,
+        riskScoreProvenance: risk.riskScoreProvenance,
+        riskScoreComputedAt: risk.computedAt,
+        riskScoreLive: risk.live,
         latestFrp: c.latestFrp,
         latestTimestampUtc: c.latestTimestampUtc,
         nearestKm: c.nearestKm,
@@ -224,18 +261,19 @@ export function analyzeAllFacilities(
 }
 
 /** Classify + build facts + narrative for ONE facility. */
-export function analyzeFacility(
+export async function analyzeFacility(
   facility: FacilityRow,
   todayUtc0: Date,
   radiusKm: number = FACILITY_RADIUS_KM,
-): {
+): Promise<{
   classification: Classification;
   narrative: FacilityNarrative;
   facts: SummaryFacts;
   persistence: PersistenceBlock;
   fireCharacteristics: FireCharacteristicsBlock;
   predictedTag: FireTagResult;
-} {
+  riskScore: RiskScoreResult;
+}> {
   const todayUtc = todayUtc0;
   const fromDate = dateDaysAgo(HISTORY_WINDOW_DAYS, todayUtc);
   const box = getDetectionsNear(facility.lat, facility.lng, radiusKm + 1, fromDate);
@@ -305,10 +343,15 @@ export function analyzeFacility(
     newDetectionsPrior30dSameLocation: prior.length,
     nearestKm: c.nearestKm,
     status: c.status,
-    healthScore: c.score,
+    riskScore: 0, // replaced below once composed (kept for facts contract)
   };
 
-  const narrative = buildNarrative(facility, c, usable, ages, facts);
+  // Live Risk Score composition (base is local; environment + temporal are
+  // best-effort ML calls — a missing signal renormalizes, never fails).
+  const risk = await computeRiskScoreLive(facility, c.score);
+  facts.riskScore = risk.riskScore;
+
+  const narrative = buildNarrative(facility, c, usable, ages, facts, risk);
 
   // ── Persistence + fire characteristics — computed from the SAME stored
   //    detections the classification used (no invented data, PDF §4).
@@ -359,6 +402,7 @@ export function analyzeFacility(
     persistence,
     fireCharacteristics,
     predictedTag: tagFromClassification(facility, c),
+    riskScore: risk,
   };
 }
 
@@ -420,6 +464,7 @@ function buildNarrative(
   usable: DetectionRow[],
   ages: Map<DetectionRow, number>,
   facts: SummaryFacts,
+  risk: RiskScoreResult,
 ): FacilityNarrative {
   const whatChanged: WhatChangedRow[] = [];
   const radiusKm = FACILITY_RADIUS_KM;
@@ -562,6 +607,7 @@ function buildNarrative(
     templatedSummary: buildTemplatedSummary(facts),
     classification,
     classificationLabel,
+    riskScore: risk,
   };
 }
 
@@ -592,6 +638,6 @@ function buildTemplatedSummary(f: SummaryFacts): string {
       `${f.newDetectionsLast5d} detection${f.newDetectionsLast5d === 1 ? "" : "s"} in the last 5 days appeared where no prior activity was recorded within 2 km.`,
     );
   }
-  s.push(`Classification: ${f.status} · Thermal Health Score ${f.healthScore}/100.`);
+  s.push(`Classification: ${f.status} · Risk Score ${f.riskScore}/100 (higher = more risk).`);
   return s.join(" ");
 }

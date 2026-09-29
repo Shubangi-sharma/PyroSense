@@ -27,7 +27,7 @@ const CHAT_TIMEOUT_MS = 25_000;
 const MAX_HISTORY_TURNS = 12;
 const MAX_TURN_CHARS = 1_000;
 
-const SYSTEM_PROMPT = `You are PYROSENSE AI Assistant, a thermal-monitoring analyst embedded in an industrial site monitoring dashboard. You answer questions about facility thermal health, FIRMS satellite detections, risk scores, and anomalies.
+const SYSTEM_PROMPT = `You are PYROSENSE AI Assistant, a thermal-monitoring analyst embedded in an industrial site monitoring dashboard. You answer questions about facility fire risk, FIRMS satellite detections, Risk Scores, and anomalies.
 
 RULES:
 1. You will be given a CONTEXT block with current facility data and FIRMS detection statistics. Use ONLY this data to answer questions.
@@ -35,7 +35,7 @@ RULES:
 3. If the user asks about something not covered in the context, say the data is insufficient rather than guessing. The context ALWAYS includes a LAST 24 HOURS block (newest full data day compared against the previous day) plus 10-day live-window aggregates: for questions about recent activity or "what changed recently", answer from those blocks, citing the stated data-day dates, instead of claiming no recent data exists. Satellite detections are date-granular and NRT data can lag real time by up to ~1 day — mention that lag when it matters. The context also ALWAYS includes a SCORING METHODOLOGY block: questions about HOW scores, statuses, or classifications are calculated must be answered from that block — never refuse methodology questions as "not in context".
 4. Keep answers concise and factual — this is a monitoring tool, not a chatbot.
 5. You may use light markdown for readability: **bold** for facility names and key figures, bullet lists for multi-item answers, and tables for comparisons. Reference specific numbers from the context when relevant.
-6. If asked about a specific facility, reference its health score, risk score, and current status.
+6. If asked about a specific facility, reference its unified Risk Score (0-100, higher = more risk) and current status.
 7. Earlier turns of the conversation may be provided; stay consistent with them, but the CONTEXT block always outranks remembered statements.`;
 
 /**
@@ -141,7 +141,7 @@ function buildMethodologyBlock(): string {
   const lines: string[] = [];
   lines.push("=== SCORING METHODOLOGY (system facts) ===");
   lines.push(
-    `Thermal Health Score (0-100, higher = healthier): starts at 100 and subtracts penalties — frequency: up to 28 pts, scaling with live-window detections (saturates at 10 detections); magnitude: up to 30 pts, scaling with confidence-weighted mean FRP (saturates at 100 MW); instability: up to 22 pts, scaling with FRP coefficient of variation (saturates at 0.6); recency: 20 pts if a usable detection occurred within the last 1 day; trend: up to 20 pts when live peak FRP exceeds the facility's recency-weighted baseline (linear, saturates at 2× baseline). A facility with zero detections scores 90.`,
+    `Unified Risk Score (0-100, HIGHER = MORE RISK): a weighted blend renormalized over the signals available for each facility — base signal 40% (the FRP-anomaly rule, inverted: a quiet site scores 10, an actively burning site scores high; derived from the live-window FRP penalties: frequency scaling with active days, log-scaled magnitude with confidence-weighted mean FRP, instability with FRP CV, spatial spread, recency, and trend vs the facility's recency×confidence-weighted baseline); environment signal 35% (ML classification risk: weighted probability × domain danger weights over the 5 hotspot categories, informed by FIRMS history, OSM distances, land cover and weather); temporal signal 25% (GRU 1/3/7-day fire-risk probabilities for the facility's H3 cell, unweighted mean × 100, from the nightly pipeline). When the ML service or a stored prediction is unavailable, the remaining weights are renormalized to 100% and the response's provenance lists which signals actually contributed.`,
   );
   lines.push(
     `Risk statuses: critical = live peak FRP more than 2.0× the trusted recency-weighted baseline; suspicious = 1.3×-2.0× baseline, OR new detections in the last 5 days with no prior activity within 2 km; watch = persistent pattern (≥2 detections spread over ≤3 km with FRP CV ≤0.45) or default when activity exists. Statuses require a trusted baseline (≥3 weighted samples) for the ratio-based tiers.`,
@@ -160,12 +160,12 @@ function buildMethodologyBlock(): string {
  * endpoints read (15-min TTL, invalidated after each ingestion refresh).
  * Before this, every chat message re-ran the full-facility classification.
  */
-function getCachedAnalyses(): FacilityAnalysis[] {
+async function getCachedAnalyses(): Promise<FacilityAnalysis[]> {
   const key = cacheKeys.analyses("chat-overview", "0", "0");
   return getAnalysesCached(key, () => analyzeAllFacilities(new Date()));
 }
 
-function buildContext(facilityId?: string): string {
+async function buildContext(facilityId?: string): Promise<string> {
   const lines: string[] = [];
   const coverage = getCoverage();
 
@@ -189,7 +189,7 @@ function buildContext(facilityId?: string): string {
     // queries against indexed tables — no cache needed).
     const facility = facilities.find((f) => f.id === facilityId);
     if (facility) {
-      const { facts, narrative } = analyzeFacility(facility, new Date());
+      const { facts, narrative } = await analyzeFacility(facility, new Date());
       lines.push("");
       lines.push("=== SELECTED FACILITY ===");
       lines.push(buildFactsText(facts));
@@ -207,7 +207,7 @@ function buildContext(facilityId?: string): string {
     }
   } else {
     // Overview context — cached top-level stats
-    const analyses = getCachedAnalyses();
+    const analyses = await getCachedAnalyses();
     const stats = {
       total: analyses.length,
       withDetections: analyses.filter((a) => a.detectionCount > 0).length,
@@ -225,11 +225,11 @@ function buildContext(facilityId?: string): string {
     lines.push(`Watch: ${stats.watch}`);
     lines.push(`Normal: ${stats.normal}`);
 
-    // Top 5 facilities needing attention
+    // Top 5 facilities needing attention (unified Risk Score, higher = more risk)
     const top5 = [...analyses]
       .sort((a, b) => {
         const rank: Record<string, number> = { critical: 0, suspicious: 1, watch: 2, unknown: 3, normal: 4 };
-        return (rank[a.status] ?? 4) - (rank[b.status] ?? 4) || a.score - b.score;
+        return (rank[a.status] ?? 4) - (rank[b.status] ?? 4) || b.riskScore - a.riskScore;
       })
       .slice(0, 5);
 
@@ -237,7 +237,7 @@ function buildContext(facilityId?: string): string {
       lines.push("");
       lines.push("Top facilities needing attention:");
       for (const a of top5) {
-        lines.push(`  - ${a.facility.name} (${a.facility.type}): status=${a.status}, health=${a.score}, detections=${a.detectionCount}${a.latestFrp != null ? `, latest FRP=${a.latestFrp.toFixed(1)} MW` : ""}`);
+        lines.push(`  - ${a.facility.name} (${a.facility.type}): status=${a.status}, riskScore=${a.riskScore}, detections=${a.detectionCount}${a.latestFrp != null ? `, latest FRP=${a.latestFrp.toFixed(1)} MW` : ""}`);
       }
     }
   }
@@ -285,7 +285,7 @@ export async function chat(
     };
   }
 
-  const context = buildContext(facilityId);
+  const context = await buildContext(facilityId);
   const priorTurns = sanitizeHistory(history);
 
   const url = `${env.OPENROUTER_API_URL.replace(/\/+$/, "")}/chat/completions`;

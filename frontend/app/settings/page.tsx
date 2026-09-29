@@ -352,11 +352,15 @@ export default function SettingsPage() {
           </div>
 
           <div className="dash-card rounded-xl p-5">
-            <h3 className="mb-1 text-sm font-medium text-text-primary">Thermal Health Score</h3>
+            <h3 className="mb-1 text-sm font-medium text-text-primary">Risk Score</h3>
             <p className="text-xs text-text-secondary">
-              The 0–100 ring on each facility (100 = quiet) summarises detection
-              frequency, FRP magnitude, stability, recency and trend vs baseline
-              into one number. Click any marker on the map for the breakdown.
+              The 0–100 ring on each facility (higher = more risk) blends three
+              signals: thermal FRP behaviour vs the site&apos;s own baseline,
+              an ML classification of the site&apos;s environment (land cover,
+              infrastructure, weather) and GRU fire-risk forecasts for the
+              area. Signals that are unavailable are renormalized — the
+              provenance lists what actually contributed. Click any marker on
+              the map for the breakdown.
             </p>
           </div>
         </div>

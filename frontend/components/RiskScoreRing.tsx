@@ -9,7 +9,15 @@ const STROKE = 8;
 const R = (SIZE - STROKE) / 2;
 const C = 2 * Math.PI * R;
 
-export default function HealthScoreRing({
+/**
+ * Unified Risk Score ring — 0–100, HIGHER = MORE RISK.
+ *
+ * Fill direction: MORE filled = MORE urgent (a facility operator scanning a
+ * dashboard reads "more filled = act sooner", consistent with the map's
+ * existing risk colours where red/high = the alarming end). An empty ring is
+ * a quiet site, not a perfect one.
+ */
+export default function RiskScoreRing({
   score,
   status,
 }: {
@@ -17,13 +25,13 @@ export default function HealthScoreRing({
   status: RiskStatus;
 }) {
   const hex = statusColorHex(status);
-  const offset = C * (1 - Math.max(0, Math.min(100, score)) / 100);
+  const fraction = Math.max(0, Math.min(100, score)) / 100;
 
   return (
     <div
       className="flex flex-col items-center gap-3"
       role="img"
-      aria-label={`Thermal health score ${score} of 100 - ${status}`}
+      aria-label={`Risk score ${score} of 100, higher means more risk - ${status}`}
     >
       <div className="relative" style={{ width: SIZE, height: SIZE }}>
         <svg width={SIZE} height={SIZE} className="-rotate-90">
@@ -44,7 +52,7 @@ export default function HealthScoreRing({
             strokeWidth={STROKE}
             strokeLinecap="round"
             strokeDasharray={C}
-            strokeDashoffset={offset}
+            strokeDashoffset={C * (1 - fraction)}
             style={{ transition: "stroke-dashoffset 400ms ease, stroke 400ms ease" }}
           />
         </svg>

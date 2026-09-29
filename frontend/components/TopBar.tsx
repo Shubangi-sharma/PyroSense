@@ -45,7 +45,7 @@ function SearchRow({
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm text-text-primary">{analysis.facility.name}</span>
         <span className="block truncate font-mono text-[10px] text-text-tertiary">
-          {analysis.facility.type} · HS {analysis.score} · {analysis.detectionCount} det
+          {analysis.facility.type} · risk {analysis.riskScore} · {analysis.detectionCount} det
         </span>
       </span>
       <span
@@ -345,7 +345,7 @@ export default function TopBar({ unreadCritical }: { unreadCritical: number }) {
                         {a.facility.name}
                       </span>
                       <span className="block truncate font-mono text-[10px] text-text-tertiary">
-                        HS {a.score} · {a.detectionCount} det ·{" "}
+                        risk {a.riskScore} · {a.detectionCount} det ·{" "}
                         {a.latestFrp != null ? `${a.latestFrp.toFixed(0)} MW` : "n/a"}
                       </span>
                     </span>

@@ -40,9 +40,12 @@ export interface SummaryFacts {
   newDetectionsPrior30dSameLocation: number;
   nearestKm: number | null;
   status: string;
-  healthScore: number;
-  /** Risk score (0-100) from the enhanced pipeline. */
-  riskScore?: number;
+  /**
+   * Unified Risk Score — 0–100, HIGHER = MORE RISK. Composed by
+   * riskScoreService (base FRP-anomaly + ML classification + GRU temporal).
+   * Replaces the retired inverse "Thermal Health Score".
+   */
+  riskScore: number;
   /** Thermal classification label from classificationService. */
   classification?: string;
   classificationLabel?: string;
@@ -89,8 +92,7 @@ export function buildFactsText(f: SummaryFacts): string {
   );
   if (f.nearestKm != null) lines.push(`Nearest detection: ${f.nearestKm.toFixed(1)} km from the asset`);
   lines.push(`Classification: ${f.status}`);
-  lines.push(`Thermal Health Score: ${f.healthScore}/100`);
-  if (f.riskScore != null) lines.push(`Risk Score: ${f.riskScore}/100`);
+  lines.push(`Risk Score: ${f.riskScore}/100 (higher = more risk)`);
   if (f.classificationLabel) lines.push(`Thermal Classification: ${f.classificationLabel}`);
   return lines.join("\n");
 }

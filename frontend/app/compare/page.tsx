@@ -148,7 +148,7 @@ export default function ComparePage() {
             Facility Comparison
           </h1>
           <p className="mt-1 max-w-3xl text-sm text-text-secondary">
-            Side-by-side view of pinned facilities — health scores, risk status,
+            Side-by-side view of pinned facilities — Risk Scores, risk status,
             predicted fire type and real FRP behaviour. Pin facilities from the
             Facility Explorer, the Hotspot Map panel, or any facility page.
           </p>
@@ -322,8 +322,11 @@ function CompareCard({
 
       <div className="flex items-center justify-between gap-2">
         <StatusBadge status={a.status} />
-        <span className="font-mono text-sm text-text-primary">
-          HS {a.score}
+        <span
+          className="font-mono text-sm text-text-primary"
+          title={`Risk Score — higher = more risk${a.riskScoreProvenance?.length ? ` · signals: ${a.riskScoreProvenance.join(" + ")}` : ""}`}
+        >
+          risk {a.riskScore}
           <span className="text-text-tertiary">/100</span>
         </span>
       </div>

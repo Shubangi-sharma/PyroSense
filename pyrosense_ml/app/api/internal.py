@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.health import get_db
 from app.config import settings
-from app.db.models import HotspotCluster, RiskPrediction
+from app.db.models import FacilityRiskCache, HotspotCluster, RiskPrediction
 from app.feature_schema import (
     CLASSIFIER_CLASSES,
     CLASSIFIER_FEATURES,
@@ -264,6 +264,128 @@ async def classify(body: ClassifyRequest, session: AsyncSession = Depends(get_db
         "model_version": CLASSIFIER_MODEL_VERSION,
         "feature_schema_version": SCHEMA_VERSION,
         "data_timestamp": _now().isoformat(),
+    }
+
+
+# ── Facility risk sync (unified Risk Score components) ──────────────────
+
+
+class FacilityRef(BaseModel):
+    id: str = Field(min_length=1, max_length=128)
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+
+
+class FacilityRiskSyncRequest(BaseModel):
+    facilities: list[FacilityRef] = Field(max_length=20000)
+
+
+@router.post("/facility-risk/sync")
+async def facility_risk_sync(
+    body: FacilityRiskSyncRequest, session: AsyncSession = Depends(get_db)
+):
+    """Node pushes its exact facility set; we upsert the rows and return the
+    latest computed components per facility.
+
+    Contract (mirrors /internal/risk/batch's degradation shape):
+    - Row exists + computed_at set → components returned (may contain nulls
+      when a component failed on the last pass).
+    - Row missing (first sync) or computed_at NULL (registered, nightly stage
+      has not run yet) → "pending" entry; Node composes base-only for it.
+
+    The ML service never derives its own facility list — it answers for
+    exactly the ids Node sends (facility-set mismatch resolved structurally).
+    """
+    from app.pipeline.facility_risk import _cell_for, temporal_from_horizons
+    from datetime import timezone
+
+    facilities = body.facilities
+    # Dedupe by id, keep order.
+    unique = {f.id: f for f in facilities}
+
+    # 1. Upsert the registry rows (idempotent; coords refresh on conflict).
+    rows = {
+        r.facility_id: r
+        for r in (
+            (await session.execute(select(FacilityRiskCache))).scalars().all()
+        )
+    }
+    now = datetime.now(timezone.utc)
+    for f in unique.values():
+        r = rows.get(f.id)
+        if r is None:
+            r = FacilityRiskCache(
+                facility_id=f.id,
+                latitude=f.lat,
+                longitude=f.lng,
+                computed_at=None,
+            )
+            session.add(r)
+            rows[f.id] = r
+        else:
+            r.latitude = f.lat
+            r.longitude = f.lng
+            # Not bumping computed_at: components remain until recomputed.
+    await session.flush()
+
+    # 2. Batch the stored GRU predictions for all referenced cells.
+    cells = {_cell_for(float(f.lat), float(f.lng)) for f in unique.values()}
+    cell_rows = (
+        (
+            await session.execute(
+                select(RiskPrediction).where(RiskPrediction.h3_cell.in_(cells))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    horizons_by_cell: dict[str, dict[str, dict]] = {}
+    overall_by_cell: dict[str, str] = {}
+    for r in cell_rows:
+        horizons_by_cell.setdefault(r.h3_cell, {})[r.horizon] = {
+            "probability": r.probability,
+        }
+        overall_by_cell[r.h3_cell] = r.overall
+
+    # 3. Serve back what is computed; refresh temporal inline for computed
+    #    rows so a fresh risk run is reflected even if the facility_risk
+    #    stage has not re-run since.
+    out_rows: list[dict] = []
+    computed = 0
+    for fid, f in unique.items():
+        r = rows.get(fid)
+        if r is None or r.computed_at is None:
+            out_rows.append({"facility_id": fid, "status": "pending"})
+            continue
+        env = r.environment_signal
+        cell = _cell_for(float(f.lat), float(f.lng))
+        t = temporal_from_horizons(
+            horizons_by_cell.get(cell), overall_by_cell.get(cell)
+        )
+        temporal = t[0] if t else None
+        source = t[1] if t else None
+        if temporal is not None:
+            r.temporal_signal = temporal
+            r.temporal_source = source
+            r.computed_at = now
+        out_rows.append(
+            {
+                "facility_id": fid,
+                "status": "ok",
+                "environment_signal": env,
+                "temporal_signal": temporal,
+                "temporal_source": source,
+                "computed_at": r.computed_at.astimezone(timezone.utc).isoformat(),
+            }
+        )
+        computed += 1
+    await session.commit()
+
+    return {
+        "synced": computed,
+        "pending": len(out_rows) - computed,
+        "computed_at": now.isoformat(),
+        "rows": out_rows,
     }
 
 

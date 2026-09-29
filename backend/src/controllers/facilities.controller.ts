@@ -44,7 +44,7 @@ export function getFacilities(req: Request, res: Response): void {
 }
 
 /** GET /api/analyses?bbox=&from=&to= — classified facilities for a window. */
-export function getAnalyses(req: Request, res: Response): void {
+export async function getAnalyses(req: Request, res: Response): Promise<void> {
   const bbox = (req.query.bbox as string | undefined) ?? "";
   if (bbox && !isValidBbox(bbox)) {
     json(res, 400, { error: "bbox must be west,south,east,north as numbers" });
@@ -54,7 +54,7 @@ export function getAnalyses(req: Request, res: Response): void {
   const to = (req.query.to as string | undefined) ?? "9999-12-31";
 
   const key = cacheKeys.analyses(bbox || "all", from, to);
-  const analyses = getAnalysesCached(key, () => {
+  const analyses = await getAnalysesCached(key, () => {
     const [w, s, e, n] = bbox ? bbox.split(",").map(Number) : [];
     const bboxObj =
       bbox && [w, s, e, n].every((v) => Number.isFinite(v))
@@ -92,8 +92,8 @@ export async function getFacilityAnalysis(req: Request, res: Response): Promise<
     json(res, 404, { error: `Facility not found: ${id}` });
     return;
   }
-  const { classification, narrative, persistence, fireCharacteristics, predictedTag } =
-    analyzeFacility(facility, new Date());
+  const { classification, narrative, persistence, fireCharacteristics, predictedTag, riskScore } =
+    await analyzeFacility(facility, new Date());
 
   // Environment enrichment (best-effort, never blocks the classification).
   let environment: FireTagEnvironment | null = null;
@@ -163,6 +163,15 @@ export async function getFacilityAnalysis(req: Request, res: Response): Promise<
       templatedSummary: narrative.templatedSummary,
       classification: narrative.classification,
       classificationLabel: narrative.classificationLabel,
+      riskScore,
+    },
+    // Unified Risk Score (live detail path) — surfaced at top level too so
+    // clients never re-derive it from the classification object.
+    riskScore: {
+      riskScore: riskScore.riskScore,
+      riskScoreProvenance: riskScore.riskScoreProvenance,
+      riskScoreComputedAt: riskScore.computedAt,
+      riskScoreLive: riskScore.live,
     },
     // PDF §4 field groups computed from the stored FIRMS archive.
     persistence,

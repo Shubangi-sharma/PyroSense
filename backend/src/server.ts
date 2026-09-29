@@ -14,6 +14,7 @@ import { refreshLive } from "./jobs/refreshLiveFirms.js";
 import { runMatchingJob } from "./jobs/runMatching.js";
 import { updateFingerprints } from "./services/fingerprintService.js";
 import { triggerPipeline } from "./services/mlClient.js";
+import { runFacilityRiskSync } from "./jobs/syncFacilityRisk.js";
 import { bootstrapOnce } from "./jobs/bootstrapOnce.js";
 import cron from "node-cron";
 
@@ -70,6 +71,16 @@ const server = app.listen(env.PORT, "0.0.0.0", () => {
     });
   });
   log.info("scheduled ML pipeline trigger (pyrosense_ml) nightly at 21:30 UTC");
+
+  // Unified Risk Score bulk components: after the nightly ML pipeline has
+  // rewritten risk_predictions, pull the per-facility environment + temporal
+  // components into facility_risk_cache (bulk views compose from this cache;
+  // detail views compute live). 22:15 UTC = 45 min after the pipeline
+  // trigger, so the sync reads freshly-written predictions.
+  cron.schedule("15 22 * * *", () => {
+    runFacilityRiskSync().catch((err) => log.error({ err: String(err) }, "facility-risk sync failed"));
+  });
+  log.info("scheduled facility-risk component sync nightly at 22:15 UTC");
 });
 
 async function shutdown(signal: string): Promise<void> {

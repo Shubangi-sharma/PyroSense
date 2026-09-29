@@ -165,7 +165,7 @@ export default function ChatPage() {
               autoGrow();
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about thermal activity, risk scores, facility health…"
+            placeholder="Ask about thermal activity, Risk Scores, facility status…"
             disabled={isLoading}
             rows={1}
             aria-label="Message"
@@ -304,7 +304,7 @@ function EmptyState({
             PyroSense AI Assistant
           </h2>
           <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-text-secondary">
-            Ask about facility health, thermal anomalies, risk classifications,
+            Ask about facility risk, thermal anomalies, risk classifications,
             or recent changes - answers are grounded in live data only.
           </p>
         </div>

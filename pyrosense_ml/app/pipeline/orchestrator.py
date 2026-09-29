@@ -24,7 +24,7 @@ from app.db.models import PipelineJobRun, WeatherDaily
 
 logger = logging.getLogger("pyrosense.ml.pipeline.orchestrator")
 
-JOB_NAMES = ("ingest", "weather", "aggregate", "risk", "hotspots")
+JOB_NAMES = ("ingest", "weather", "aggregate", "risk", "hotspots", "facility_risk")
 
 # Concurrent Open-Meteo fetches per batch (public community API — be gentle).
 WEATHER_FETCH_CONCURRENCY = 8
@@ -132,6 +132,13 @@ async def run_hotspots_stage(session: AsyncSession, *, lookback_days: int = 60) 
     return await run_hotspot_pipeline(session, lookback_days=lookback_days)
 
 
+async def run_facility_risk_stage(session: AsyncSession) -> dict:
+    """Compute + store per-facility Risk Score components (env + temporal)."""
+    from app.pipeline.facility_risk import run_facility_risk_stage as run_stage
+
+    return await run_stage(session)
+
+
 async def run_full_pipeline(session: AsyncSession, *, days: int = 10) -> dict:
     """Run all stages in order with job-run bookkeeping. Returns stage reports."""
     from app.data.live import run_ingest_cycle
@@ -153,6 +160,8 @@ async def run_full_pipeline(session: AsyncSession, *, days: int = 10) -> dict:
                 rows = result.get("rows_upserted", 0)
             elif name == "hotspots":
                 rows = result.get("persistent", 0)
+            elif name == "facility_risk":
+                rows = result.get("computed", 0)
             await _record_job(session, name, "success", int(rows), None, started)
             reports[name] = {"status": "success", **(result if isinstance(result, dict) else {})}
         except Exception as exc:  # noqa: BLE001 — stage isolation is the contract
@@ -188,6 +197,14 @@ async def run_full_pipeline(session: AsyncSession, *, days: int = 10) -> dict:
     await _stage("aggregate", _aggregate, depends_on=["ingest", "weather"])
     await _stage("risk", _risk, depends_on=["aggregate"])
     await _stage("hotspots", _hotspots, depends_on=["ingest"])
+
+    # 6. Facility risk components (reads risk_predictions → must follow risk)
+    async def _facility_risk():
+        r = await run_facility_risk_stage(session)
+        await session.commit()
+        return r
+
+    await _stage("facility_risk", _facility_risk, depends_on=["risk"])
 
     return reports
 

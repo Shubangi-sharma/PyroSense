@@ -50,6 +50,32 @@ const RiskBatchResponseSchema = z.object({
   data_timestamp: z.string(),
 });
 
+/**
+ * Classification-derived risk component of the unified Risk Score —
+ * /internal/classify's risk_score (weighted probability × category danger
+ * weights, weather+land+OSM-informed via feature engineering). Schema mirrors
+ * predict.py's category weighting contract (risk_score ∈ [0, 100]).
+ */
+const ClassificationRiskResponseSchema = z.object({
+  risk_score: z.number().finite().min(0).max(100),
+  class: z.string(),
+  confidence: z.number().finite(),
+  feature_provenance: z.record(z.string(), z.string()),
+  data_timestamp: z.string(),
+});
+
+export type ClassificationRiskResult = z.infer<typeof ClassificationRiskResponseSchema>;
+
+/**
+ * Per-facility cached Risk Score components pushed by pyrosense_ml's nightly
+ * pipeline (POST /internal/facility-risk/sync → upserted into the Node
+ * backend's facility_risk_cache table).
+ */
+const FacilityRiskSyncResponseSchema = z.object({
+  synced: z.number().int().nonnegative(),
+  computed_at: z.string(),
+});
+
 const HotspotSummarySchema = z.object({
   cluster_id: z.string(),
   h3_cell: z.string(),
@@ -230,6 +256,107 @@ export async function fetchCellRisk(cell: string): Promise<RiskEntry | null> {
   } catch (err) {
     recordFailure();
     log.warn({ err: String(err), cell }, "fetchCellRisk failed");
+    return null;
+  }
+}
+
+/**
+ * Environment component of the unified Risk Score: live classification-risk
+ * for one point via /internal/classify (feature engineering + inference only
+ * — unlike /predict it persists nothing and runs no GenAI, so it is the cheap
+ * primitive for scoring). Null when the ML service is unavailable.
+ */
+export async function fetchClassificationRisk(
+  lat: number,
+  lng: number,
+): Promise<ClassificationRiskResult | null> {
+  const { state } = breakerState();
+  if (state === "open") return null;
+  try {
+    const { status, body } = await call(
+      "/internal/classify",
+      { method: "POST", body: JSON.stringify({ latitude: lat, longitude: lng }) },
+    );
+    if (status !== 200) throw new Error(`HTTP ${status}`);
+    const parsed = ClassificationRiskResponseSchema.parse(body);
+    recordSuccess();
+    return parsed;
+  } catch (err) {
+    recordFailure();
+    log.warn({ err: String(err), lat, lng }, "fetchClassificationRisk failed");
+    return null;
+  }
+}
+
+/**
+ * Sync the per-facility cached Risk Score components from pyrosense_ml's
+ * nightly pipeline run. Node pushes its exact facility set (ids + coords);
+ * pyrosense_ml computes/caches the environment + temporal components per
+ * facility and returns them for upsert into facility_risk_cache. Null when
+ * the ML service is unavailable (callers keep yesterday's cache).
+ */
+export async function syncFacilityRisk(
+  facilities: { id: string; lat: number; lng: number }[],
+): Promise<
+  | {
+      synced: number;
+      computedAt: string;
+      rows: {
+        facility_id: string;
+        environment_signal: number | null;
+        temporal_signal: number | null;
+        temporal_source: string | null;
+        computed_at: string;
+      }[];
+    }
+  | null
+> {
+  if (facilities.length === 0) return null;
+  const { state } = breakerState();
+  if (state === "open") return null;
+  try {
+    const { status, body } = await call(
+      "/internal/facility-risk/sync",
+      { method: "POST", body: JSON.stringify({ facilities }) },
+    );
+    if (status !== 200) throw new Error(`HTTP ${status}`);
+    const parsed = z
+      .object({
+        synced: z.number().int().nonnegative(),
+        computed_at: z.string(),
+        rows: z.array(
+          z.object({
+            facility_id: z.string(),
+            // "ok" rows carry the components; "pending" rows (first sync,
+            // nightly stage has not filled them yet) carry only the id.
+            status: z.string().optional(),
+            environment_signal: z.number().finite().min(0).max(100).nullish(),
+            temporal_signal: z.number().finite().min(0).max(100).nullish(),
+            temporal_source: z.string().nullish(),
+            computed_at: z.string().nullish(),
+          }),
+        ),
+      })
+      .parse(body);
+    recordSuccess();
+    // Only computed rows are upserted — pending facilities keep whatever
+    // state they had (or stay absent, composing base-only).
+    return {
+      synced: parsed.synced,
+      computedAt: parsed.computed_at,
+      rows: parsed.rows
+        .filter((r) => r.status === "ok" && r.computed_at != null)
+        .map((r) => ({
+          facility_id: r.facility_id,
+          environment_signal: r.environment_signal ?? null,
+          temporal_signal: r.temporal_signal ?? null,
+          temporal_source: r.temporal_source ?? null,
+          computed_at: r.computed_at as string,
+        })),
+    };
+  } catch (err) {
+    recordFailure();
+    log.warn({ err: String(err), facilities: facilities.length }, "syncFacilityRisk failed");
     return null;
   }
 }

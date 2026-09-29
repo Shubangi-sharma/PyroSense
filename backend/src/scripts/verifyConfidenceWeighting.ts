@@ -7,7 +7,7 @@
  * proves that after the change:
  *   1. confidence still gates inclusion (a low-only facility → unknown),
  *   2. equal-confidence histories score identically (recency untouched),
- *   3. mixing confidence CHANGES the weighted baseline and the health
+ *   3. mixing confidence CHANGES the weighted baseline and the base-signal
  *      score in the intended direction (high-confidence evidence counts
  *      more; a low-confidence spike is damped),
  *   4. the signal-quality split is exposed for the UI.

@@ -56,7 +56,17 @@ export interface FacilityDto {
 export interface FacilityAnalysisDto {
   facility: FacilityDto;
   status: "normal" | "watch" | "suspicious" | "critical" | "unknown";
-  score: number;
+  /**
+   * Unified Risk Score — 0–100, HIGHER = MORE RISK (backend riskScoreService).
+   * Replaces the retired inverse "Thermal Health Score".
+   */
+  riskScore: number;
+  /** Which signals contributed ("base"|"environment"|"temporal"). */
+  riskScoreProvenance?: string[];
+  /** ISO timestamp of the newest contributing signal. */
+  riskScoreComputedAt?: string;
+  /** true = live composition (detail views); false = cached (bulk views). */
+  riskScoreLive?: boolean;
   latestFrp: number | null;
   latestTimestampUtc: string | null;
   nearestKm: number | null;
@@ -109,6 +119,13 @@ export interface NarrativeDto {
   templatedSummary: string;
   /** "openrouter" when LLM-generated, "template" for the fallback. */
   provider?: "openrouter" | "template";
+  /** Unified Risk Score block (live detail path) with provenance. */
+  riskScore?: {
+    riskScore: number;
+    riskScoreProvenance: string[];
+    riskScoreComputedAt: string;
+    riskScoreLive: boolean;
+  };
 }
 
 /** PDF §4 persistence group — computed from the stored FIRMS archive. */
@@ -137,6 +154,7 @@ export interface FacilityAnalysisResponseDto {
     | FacilityAnalysisDto["status"]
     | {
         status: FacilityAnalysisDto["status"];
+        /** Base-signal classification score (0–100, higher = more risk). */
         score: number;
         latestFrp: number | null;
         latestTimestampUtc: string | null;
@@ -147,6 +165,13 @@ export interface FacilityAnalysisResponseDto {
         baselineMeanFrp: number | null;
         liveConfidenceSplit?: { high: number; nominal: number; low: number };
       };
+  /** Unified Risk Score (live detail path) — surfaced top-level. */
+  riskScore?: {
+    riskScore: number;
+    riskScoreProvenance: string[];
+    riskScoreComputedAt: string;
+    riskScoreLive: boolean;
+  };
   narrative: NarrativeDto;
   /** PDF §4 groups (optional: older backends may omit them). */
   persistence?: PersistenceBlockDto;
@@ -214,6 +239,8 @@ export interface CommandViewDto {
   highRisk: number;
   critical: number;
   unidentifiedSources: number;
+  /** Bulk-view freshness: when the newest cached ML component was computed. */
+  riskScoreComputedAt?: string;
   priorityList: {
     id: string;
     name: string;
@@ -221,8 +248,11 @@ export interface CommandViewDto {
     lat: number;
     lng: number;
     status: string;
-    healthScore: number;
+    /** Unified Risk Score — 0–100, HIGHER = MORE RISK. */
     riskScore: number;
+    riskScoreProvenance: string[];
+    riskScoreComputedAt: string;
+    riskScoreLive: boolean;
     classification: string;
     classificationLabel: string;
     detectionCount: number;

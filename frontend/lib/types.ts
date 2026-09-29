@@ -3,7 +3,7 @@
  *
  * The Next.js app is a pure frontend: facilities come from the backend's
  * ingested OSM catalogue, thermal detections from the backend's stored FIRMS
- * archive, and risk status / health score / narrative content are COMPUTED
+ * archive, and risk status / Risk Score / narrative content are COMPUTED
  * by the backend (backend/src/services/). Nothing is invented client-side.
  */
 
@@ -63,8 +63,18 @@ export interface Detection {
 export interface FacilityAnalysis {
   facility: Facility;
   status: RiskStatus;
-  /** 0–100, computed by the backend's scoringService. */
-  score: number;
+  /**
+   * Unified Risk Score — 0–100, HIGHER = MORE RISK (riskScoreService:
+   * base FRP-anomaly + ML classification + GRU temporal, renormalized over
+   * the signals actually available).
+   */
+  riskScore: number;
+  /** Which signals contributed ("base"|"environment"|"temporal"). */
+  riskScoreProvenance?: string[];
+  /** ISO timestamp of the newest contributing signal. */
+  riskScoreComputedAt?: string;
+  /** true = live composition (detail views); false = cached (bulk views). */
+  riskScoreLive?: boolean;
   /** Latest detection FRP within the corroboration radius, MW. Null = none. */
   latestFrp: number | null;
   /** km to the nearest detection; null = no detection nearby. */
@@ -258,8 +268,11 @@ export interface CommandFacility {
   lat: number;
   lng: number;
   status: string;
-  healthScore: number;
+  /** Unified Risk Score — 0–100, HIGHER = MORE RISK (riskScoreService). */
   riskScore: number;
+  riskScoreProvenance: string[];
+  riskScoreComputedAt: string;
+  riskScoreLive: boolean;
   classification: string;
   classificationLabel: string;
   detectionCount: number;

@@ -68,7 +68,7 @@ export const CRITICAL_FRP_RATIO = 2.0;
 export const MIN_PERSISTENT_DETECTIONS = 2;
 export const MAX_DETECTION_SPREAD_KM = 3;
 export const PERSISTENT_FRP_CV = 0.45;
-export const HEALTHY_BASELINE = 90;
+export const QUIET_BASELINE = 90;
 /** Minimum weighted-sample count before a baseline is trusted. */
 export const MIN_BASELINE_SAMPLES = 3;
 
@@ -231,9 +231,10 @@ export function coefficientOfVariation(xs: number[]): number {
   return Math.sqrt(variance) / m;
 }
 
-/* ── Thermal Health Score (100 − penalties) ─────────────────────────── */
+/* ── Base-signal scoring (100 − penalties; the input to the unified
+   Risk Score's base component — see riskScoreService.ts) ─────────────── */
 
-export interface HealthScoreInput {
+export interface BaseScoreInput {
   /** usable detections in the LIVE window (the behaviour being graded) */
   liveCount: number;
   /** confidence-weighted mean FRP of the live window, MW */
@@ -257,12 +258,13 @@ export interface HealthScoreInput {
 }
 
 /**
- * Thermal Health Score — 100 minus penalties, clamped to [0, 100].
+ * Base-signal score — 100 minus penalties, clamped to [0, 100]. Lower = more
+ * thermal anomaly risk; riskScoreService inverts it for the unified score.
  *
  * Design (v2 — evidence-quality weighting):
  *  • The graded quantity is the LIVE window (10 d), not all history —
  *    a site that burned for a month last quarter and is quiet today is
- *    HEALTHY today. The old input mixed full-history counts into every term.
+ *    QUIET today. The old input mixed full-history counts into every term.
  *  • Magnitude is LOG-scaled: FRP is heavy-tailed (one 400 MW flare next to
  *    ten 3 MW flickers); a linear /100 term let a single outlier saturate
  *    the whole score. log1p gives every doubling of power a similar penalty
@@ -283,7 +285,7 @@ export interface HealthScoreInput {
  *    (see trustedTrend below) — one stale baseline row can no longer
  *    manufacture a fake "2× baseline" escalation.
  */
-export function computeHealthScore(input: HealthScoreInput): number {
+export function computeBaseScore(input: BaseScoreInput): number {
   const {
     liveCount,
     liveMeanFrp,
@@ -297,8 +299,8 @@ export function computeHealthScore(input: HealthScoreInput): number {
     lowConfidenceShare,
   } = input;
 
-  // Nothing usable in the live window → quiet site, full health.
-  if (liveCount === 0) return HEALTHY_BASELINE;
+  // Nothing usable in the live window → quiet site (documented 90 floor).
+  if (liveCount === 0) return QUIET_BASELINE;
 
   // Evidence quality ∈ (0, 1]: how much we trust the live-window picture.
   //  • sample floor: 1 det = 0.45, 2 = 0.7, 3+ = 0.85, 6+ = 1.0
@@ -398,7 +400,7 @@ export function classifyFromDetections(input: ClassifyInput): Classification {
     const hasAny = withDist.length > 0;
     return {
       status: hasAny ? "unknown" : "normal",
-      score: hasAny ? 40 : HEALTHY_BASELINE,
+      score: hasAny ? 40 : QUIET_BASELINE,
       latestFrp: newest ? newest.d.frp : null,
       latestTimestampUtc,
       latestConfidence: newest ? newest.d.confidence : null,
@@ -479,7 +481,7 @@ export function classifyFromDetections(input: ClassifyInput): Classification {
     status = "watch";
   }
 
-  // ── health-score inputs: the graded quantity is the LIVE window ──
+  // ── base-signal inputs: the graded quantity is the LIVE window ──
   // Live-window spread (not all-history spread): fire growth NOW.
   const liveSpreadKm =
     live.length >= 2
@@ -499,7 +501,7 @@ export function classifyFromDetections(input: ClassifyInput): Classification {
   const liveSplitTotal = liveConfidenceSplit.high + liveConfidenceSplit.nominal + liveConfidenceSplit.low;
   const lowConfidenceShare = liveSplitTotal > 0 ? liveConfidenceSplit.low / liveSplitTotal : 0;
 
-  const score = computeHealthScore({
+  const score = computeBaseScore({
     liveCount: live.length,
     liveMeanFrp: liveMean,
     livePeakFrp: livePeak,

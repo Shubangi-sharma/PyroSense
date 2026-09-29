@@ -62,7 +62,10 @@ function toAnalysis(a: FacilityAnalysisDto): FacilityAnalysis {
   return {
     facility: toFacility(a.facility),
     status: a.status,
-    score: a.score,
+    riskScore: a.riskScore,
+    riskScoreProvenance: a.riskScoreProvenance,
+    riskScoreComputedAt: a.riskScoreComputedAt,
+    riskScoreLive: a.riskScoreLive,
     latestFrp: a.latestFrp,
     nearestKm: a.nearestKm,
     detectionCount: a.detectionCount,

@@ -12,6 +12,12 @@
  *
  * ingest_state — tiny key/value store for job bookkeeping (last refresh,
  *   archive progress) so jobs are resumable and reportable.
+ *
+ * facility_risk_cache — per-facility cached components of the unified Risk
+ *   Score (environment + temporal signals, computed by pyrosense_ml's
+ *   nightly pipeline and pushed here). The base (FRP-anomaly) component is
+ *   always recomputed live from stored detections — it is cheap and local —
+ *   so only the two ML-derived components are cached.
  */
 
 export const SCHEMA_SQL = `
@@ -83,4 +89,15 @@ CREATE TABLE IF NOT EXISTS ingest_state (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS facility_risk_cache (
+  facility_id           TEXT PRIMARY KEY,
+  environment_signal    REAL,
+  temporal_signal       REAL,
+  temporal_source       TEXT,
+  computed_at           TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_facility_risk_cache_computed_at
+  ON facility_risk_cache (computed_at);
 `;

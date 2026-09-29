@@ -3,20 +3,27 @@
  *
  * Top-level command view: counters + priority-ranked facility list.
  * Single endpoint that both the dashboard and the chatbot read from.
+ *
+ * Risk Score here is the UNIFIED one (riskScoreService): the facility's
+ * cached bulk composition (fresh local base signal + nightly ML-derived
+ * environment/temporal components), provenance included. The retired ad hoc
+ * computeRiskScore blend (inverse-score*0.4 + rule-based classRisk*0.3 +
+ * frpRisk*0.2 + trendRisk*0.1) is DELETED, not deprecated — per the repo's
+ * Phase 2A precedent (risk_score.py removed its legacy formula without
+ * even a comment). classifyRuleBased survives ONLY as an informational
+ * behavioural label ("classificationLabel"), not as a scoring input.
  */
 
 import { Request, Response } from "express";
 import { analyzeAllFacilities } from "../services/analysisService.js";
-import { getBaseline, getDbStats, type DetectionRow } from "../db/client.js";
-import { parseBaseline } from "../services/fingerprintService.js";
+import { getDbStats } from "../db/client.js";
 import {
   buildClassificationSignals,
   CLASSIFICATION_LABELS,
-  CLASSIFICATION_SEVERITY,
   classifyRuleBased,
-  type ThermalClassification,
 } from "../services/classificationService.js";
-import { getDetectionsNear } from "../db/client.js";
+import { getDetectionsNear, getBaseline } from "../db/client.js";
+import { parseBaseline } from "../services/fingerprintService.js";
 import { FACILITY_RADIUS_KM, LIVE_WINDOW_DAYS } from "../config/regions.js";
 import { getAnalysesCached, cacheKeys } from "../services/cacheService.js";
 
@@ -27,35 +34,23 @@ interface CommandFacility {
   lat: number;
   lng: number;
   status: string;
-  healthScore: number;
+  /** Unified Risk Score — 0–100, HIGHER = MORE RISK (riskScoreService). */
   riskScore: number;
+  riskScoreProvenance: string[];
+  riskScoreComputedAt: string;
+  riskScoreLive: boolean;
+  /** Informational behavioural label (rule-based) — NOT a score input. */
   classification: string;
   classificationLabel: string;
   detectionCount: number;
   latestFrp: number | null;
 }
 
-function computeRiskScore(
-  healthScore: number,
-  classificationSeverity: number,
-  frpRatio: number,
-  trend: number,
-): number {
-  // Risk = inverse of health + classification severity + trend
-  const healthRisk = Math.max(0, 100 - healthScore);
-  const classRisk = classificationSeverity;
-  const frpRisk = Math.min(100, Math.max(0, (frpRatio - 1) * 50));
-  const trendRisk = Math.max(0, trend * 10);
-
-  const raw = healthRisk * 0.4 + classRisk * 0.3 + frpRisk * 0.2 + trendRisk * 0.1;
-  return Math.round(Math.max(0, Math.min(100, raw)));
-}
-
 export async function getCommand(req: Request, res: Response): Promise<void> {
   const key = cacheKeys.analyses("command", "0", "0");
 
-  const result = getAnalysesCached(key, () => {
-    const analyses = analyzeAllFacilities(new Date());
+  const result = await getAnalysesCached(key, async () => {
+    const analyses = await analyzeAllFacilities(new Date());
     const todayUtc = new Date();
     const fromDate = new Date(todayUtc.getTime() - LIVE_WINDOW_DAYS * 86_400_000)
       .toISOString()
@@ -64,10 +59,13 @@ export async function getCommand(req: Request, res: Response): Promise<void> {
     const priorityList: CommandFacility[] = [];
 
     for (const a of analyses) {
+      // Informational behavioural label only — the unified Risk Score no
+      // longer consumes rule-based classification severity. Kept because the
+      // chatbot/dashboard UI groups facilities by this label; flagged as an
+      // open question in docs/RISK_SCORE_UNIFICATION.md.
       const baselineRow = getBaseline(a.facility.id);
       const baseline = parseBaseline(baselineRow);
-
-      const dets: DetectionRow[] = getDetectionsNear(
+      const dets = getDetectionsNear(
         a.facility.lat,
         a.facility.lng,
         FACILITY_RADIUS_KM + 1,
@@ -76,13 +74,6 @@ export async function getCommand(req: Request, res: Response): Promise<void> {
       const signals = buildClassificationSignals(a.facility, dets, baseline);
       const classification = classifyRuleBased(signals);
 
-      const severity = CLASSIFICATION_SEVERITY[classification];
-      const frpRatio = baseline && baseline.frpMean > 0 && a.liveMeanFrp != null
-        ? a.liveMeanFrp / baseline.frpMean
-        : 1;
-
-      const riskScore = computeRiskScore(a.score, severity, frpRatio, 0);
-
       priorityList.push({
         id: a.facility.id,
         name: a.facility.name,
@@ -90,8 +81,10 @@ export async function getCommand(req: Request, res: Response): Promise<void> {
         lat: a.facility.lat,
         lng: a.facility.lng,
         status: a.status,
-        healthScore: a.score,
-        riskScore,
+        riskScore: a.riskScore,
+        riskScoreProvenance: a.riskScoreProvenance,
+        riskScoreComputedAt: a.riskScoreComputedAt,
+        riskScoreLive: a.riskScoreLive,
         classification,
         classificationLabel: CLASSIFICATION_LABELS[classification],
         detectionCount: a.detectionCount,
@@ -113,6 +106,10 @@ export async function getCommand(req: Request, res: Response): Promise<void> {
       highRisk: analyses.filter((a) => a.status === "suspicious").length,
       critical: analyses.filter((a) => a.status === "critical").length,
       unidentifiedSources,
+      // Bulk-view freshness: when the newest cached ML component was
+      // computed (bulk views read cached components; detail views compute
+      // live — the UI labels the difference).
+      riskScoreComputedAt: analyses[0]?.riskScoreComputedAt ?? new Date().toISOString(),
     };
 
     return { ...stats, priorityList };

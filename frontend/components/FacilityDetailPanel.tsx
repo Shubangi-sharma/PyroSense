@@ -5,7 +5,7 @@ import { X, Satellite, ExternalLink } from "lucide-react";
 import BrandMark from "@/components/BrandMark";
 import { FacilityAnalysis, RiskStatus, FacilityNarrative, statusColorHex } from "@/lib/types";
 import { StatusBadge } from "@/lib/status";
-import HealthScoreRing from "@/components/HealthScoreRing";
+import RiskScoreRing from "@/components/RiskScoreRing";
 import WhatChangedPanel from "@/components/WhatChangedPanel";
 import AiSummaryBlock from "@/components/AiSummaryBlock";
 import IncidentTimeline from "@/components/IncidentTimeline";
@@ -97,7 +97,7 @@ export default function FacilityDetailPanel({
         <div className="pyro-scroll flex-1 space-y-5 overflow-y-auto p-5">
           {/* scores + telemetry */}
           <div className="flex items-center gap-5 rounded-xl bg-bg-surface p-5">
-            <HealthScoreRing score={analysis.score} status={analysis.status as RiskStatus} />
+            <RiskScoreRing score={analysis.riskScore} status={analysis.status as RiskStatus} />
             <div className="ml-auto grid w-[140px] grid-cols-1 gap-2">
               <MonoStat label="Type" value={analysis.facility.type} />
               <MonoStat
@@ -116,7 +116,7 @@ export default function FacilityDetailPanel({
           </div>
 
           {/* contextual fire type — the "what is actually burning" focus
-              callout, sitting directly under the health score */}
+              callout, sitting directly under the Risk Score */}
           <FireTagFocus
             tag={analysis.predictedTag?.tag}
             confidence={analysis.predictedTag?.confidence}

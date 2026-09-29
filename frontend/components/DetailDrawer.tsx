@@ -510,7 +510,7 @@ export default function DetailDrawer({
                               {a.facility.name}
                             </span>
                             <span className="block text-xs text-text-secondary">
-                              {a.facility.type} · {a.detectionCount} det · score {a.score}
+                              {a.facility.type} · {a.detectionCount} det · risk {a.riskScore}
                             </span>
                           </span>
                           <span className="ml-auto flex-shrink-0 font-mono text-[11px] text-text-secondary">

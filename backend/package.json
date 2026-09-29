@@ -16,7 +16,9 @@
     "refresh:firms": "tsx src/jobs/refreshLiveFirms.ts",
     "match:detections": "tsx src/jobs/runMatching.ts",
     "verify:confidence": "tsx src/scripts/verifyConfidenceWeighting.ts",
-    "verify:firetag": "tsx src/scripts/verifyFireTag.ts"
+    "verify:firetag": "tsx src/scripts/verifyFireTag.ts",
+    "test": "node --test --import tsx src/**/*.test.ts",
+    "test:services": "node --test --import tsx src/services/riskScoreService.test.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",

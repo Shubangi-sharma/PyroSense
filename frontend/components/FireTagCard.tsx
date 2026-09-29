@@ -12,7 +12,7 @@
  *
  * Three presentations:
  *  - FireTagChip   — inline chip (headers, comparison rows).
- *  - FireTagFocus  — compact "focus" panel for directly under the health
+ *  - FireTagFocus  — compact "focus" panel for directly under the Risk
  *                    score: the prediction is the visual priority there,
  *                    but styling stays inside the dashboard theme (status
  *                    colour + hairline border, no foreign chrome).
@@ -52,7 +52,7 @@ export function FireTagChip({
 
 /**
  * FireTagFocus — compact prediction panel that sits directly below the
- * health-score ring. The tag colour (not a new card style) carries the
+ * Risk-Score ring. The tag colour (not a new card style) carries the
  * identity, so it reads as part of the existing theme while standing out
  * as the "what is actually burning" callout.
  */
