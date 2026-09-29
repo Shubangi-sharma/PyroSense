@@ -59,11 +59,19 @@ deploy (dashboard → Manual Deploy, or `POST /v1/services/{id}/deploys`).
 ## 3. Free-plan gotchas (verified in this repo's audit)
 
 - **No persistent disks.** The backend's SQLite file lives on ephemeral
-  storage: every deploy/spin-down wipes facilities + detections. The startup
-  bootstrap (`backend/src/jobs/bootstrapOnce.ts`) re-seeds facilities from
-  `data/user_facilities.csv` and pulls fresh FIRMS data on boot — **provided
-  `FIRMS_MAP_KEY` is valid**. On a paid plan, attach a Disk at `/var/data`
-  and keep `DATABASE_URL=/var/data/pyrosense.db` to survive deploys.
+  storage: every deploy/spin-down wipes facilities + detections. Two
+  counter-measures ship in the repo:
+  1. **Boot-time backfill** (`backend/src/jobs/bootstrapOnce.ts`): when
+     detections are below `ARCHIVE_BACKFILL_MIN_ROWS` (default 50k), the
+     startup job re-hydrates `ARCHIVE_BACKFILL_DAYS` (default 10) of FIRMS
+     archive data + runs matching — a fresh boot serves real classified data
+     in ~2 minutes. Set `ARCHIVE_BACKFILL_DAYS=0` to disable.
+  2. **Keep-warm pinger** (`.github/workflows/keep-warm.yml`): pings both
+     services' `/health` every 14 min (inside the ~15-min spin-down window)
+     so the disk rarely gets wiped at all. Latency optimizer only — the app
+     self-heals without it.
+  On a paid plan, attach a Disk at `/var/data` and keep
+  `DATABASE_URL=/var/data/pyrosense.db` to survive deploys outright.
 - **`DATABASE_URL` on the backend is a file path** (better-sqlite3). Do not
   paste the `pyrosense-db` Postgres connection string there — better-sqlite3
   will silently create an empty SQLite file at that nonsense path and the

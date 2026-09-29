@@ -79,6 +79,16 @@ const schema = z.object({
         .map((o) => o.trim())
         .filter(Boolean),
     ),
+
+  /**
+   * On boot, if firms_detections holds fewer than ARCHIVE_BACKFILL_MIN_ROWS,
+   * backfill the FIRMS archive for this many days (5-day chunks per region,
+   * 1.5s spacing). This keeps a free-plan deployment that loses its disk on
+   * every spin-down useful within ~2 minutes of waking instead of showing a
+   * day-one dashboard. 0 disables the backfill entirely.
+   */
+  ARCHIVE_BACKFILL_DAYS: z.coerce.number().int().min(0).max(365).default(10),
+  ARCHIVE_BACKFILL_MIN_ROWS: z.coerce.number().int().min(1).default(50_000),
 });
 
 const parsed = schema.safeParse(process.env);

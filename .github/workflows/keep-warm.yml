@@ -1,0 +1,48 @@
+# Keep the two Render free-tier services warm.
+#
+# Render free instances spin down after ~15 min idle; every spin-down also
+# wipes the backend's ephemeral SQLite disk. This pinger hits both services
+# every 14 minutes (inside the spin-down window) so they stay up and the
+# data stays intact.
+#
+# This is a LATENCY optimizer, not a correctness dependency: even if these
+# pings stop, backend/src/jobs/bootstrapOnce.ts re-hydrates the archive from
+# FIRMS on every boot (~2 min), so the app self-heals either way.
+#
+# Quota notes (be aware before relying on this):
+# - Public repo: GitHub Actions scheduled workflows are free — no concern.
+# - Private repo: each run bills ≥1 minute (runner start-up dominates);
+#   ~103 runs/day ≈ 3,100 min/month, which EXCEEDS the 2,000 free minutes
+#   for private repos — pings would stop partway through the month. On a
+#   private repo, either pay for Actions minutes or switch to an external
+#   pinger (UptimeRobot / cron-job.org) pointing at the two /health URLs.
+# - GitHub disables scheduled workflows after 60 days without repo activity;
+#   it emails the owner first (a no-op commit to this file re-enables).
+
+name: keep-warm
+
+on:
+  schedule:
+    - cron: "*/14 * * * *"
+  workflow_dispatch: {} # manual trigger for testing
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend /health
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 \
+            https://pyrosense-2aif.onrender.com/health)
+          echo "backend /health -> $code"
+          test "$code" = "200"
+
+      - name: Ping ML /health
+        # ML lives behind the backend's proxy too, but pinging it directly
+        # keeps BOTH instances' idle timers reset and doubles as an
+        # independent liveness signal for the FastAPI service.
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 \
+            https://pyrosense-ml.onrender.com/health)
+          echo "ml /health -> $code"
+          test "$code" = "200"

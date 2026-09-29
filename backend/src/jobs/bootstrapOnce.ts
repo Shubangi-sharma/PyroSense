@@ -8,6 +8,10 @@
  *
  *   1. user_facilities empty + seed CSV shipped in the image → ingest it.
  *   2. firms_detections empty → run one live FIRMS refresh + matching now.
+ *   3. detections below the backfill threshold → re-hydrate the FIRMS
+ *      archive (ARCHIVE_BACKFILL_DAYS, default 10) so a free-plan host that
+ *      wipes its disk on every spin-down still boots with real history —
+ *      classifications/baselines come back within a minute, not a day.
  *
  * It never blocks server start (server.ts fires it without awaiting) and
  * never runs twice per process. Failures are logged, not thrown — the
@@ -17,8 +21,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { db, getAllUserFacilities, getCoverage } from "../db/client.js";
+import { env } from "../config/env.js";
 import { ingestUserDataset } from "./ingestUserDataset.js";
 import { refreshLive } from "./refreshLiveFirms.js";
+import { ingestArchive } from "./ingestFirmsArchive.js";
 import { runMatchingJob } from "./runMatching.js";
 import { ingestLog as log } from "../lib/logger.js";
 
@@ -59,6 +65,26 @@ export function bootstrapOnce(): void {
       }
     } else {
       log.info({ rows: coverage.rows }, "bootstrap: detections already present — skipping seed refresh");
+    }
+
+    // 3. Archive backfill — keeps a disk-wiped (free-plan) deployment useful
+    // immediately after every spin-up. Skipped when ARCHIVE_BACKFILL_DAYS=0
+    // or enough rows already survived (persisted disk / lucky warm boot).
+    if (env.ARCHIVE_BACKFILL_DAYS > 0 && getCoverage().rows < env.ARCHIVE_BACKFILL_MIN_ROWS) {
+      try {
+        log.info(
+          { days: env.ARCHIVE_BACKFILL_DAYS, minRows: env.ARCHIVE_BACKFILL_MIN_ROWS },
+          "bootstrap: detections below threshold — starting archive backfill",
+        );
+        await ingestArchive(env.ARCHIVE_BACKFILL_DAYS);
+        const matchResult = await runMatchingJob();
+        log.info(
+          { coverage: getCoverage(), matchResult },
+          "bootstrap: archive backfill + matching done",
+        );
+      } catch (err) {
+        log.error({ err: String(err) }, "bootstrap: archive backfill failed (15-min cron keeps live data flowing)");
+      }
     }
   })();
 }
