@@ -12,6 +12,14 @@ healthRouter.get("/", (_req: Request, res: Response) => {
     db: coverage,
     lastRefresh: getState("refresh:lastCompletedAt"),
     lastArchive: getState("archive:lastCompletedAt"),
-    lastFacilityIngest: getState("facilities:lastCompletedAt"),
+    // Two facility-ingest paths write different state keys: the Overpass job
+    // writes "facilities:lastCompletedAt", the user-dataset CSV seeder used
+    // by bootstrapOnce writes "dataset:lastCompletedAt". Report whichever
+    // ran last so first-paint CSV seeding is visible in /health.
+    lastFacilityIngest:
+      [getState("facilities:lastCompletedAt"), getState("dataset:lastCompletedAt")]
+        .filter(Boolean)
+        .sort()
+        .pop() ?? null,
   });
 });
