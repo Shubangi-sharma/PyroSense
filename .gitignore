@@ -11,7 +11,8 @@ node_modules/
 # Environment variables
 .env
 .env.*
-.env.example
+# Env TEMPLATES must ship with the repo (Step 4 durability fix)
+!.env.example
 .env.examples
 .env.local
 .env.development.local
