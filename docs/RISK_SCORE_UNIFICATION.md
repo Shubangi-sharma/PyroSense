@@ -588,3 +588,48 @@ facilities, 209 MB SQLite):
    idempotent upserts) tolerates partial completion, and components fill in
    progressively. If facility count grows another order of magnitude, this
    stage should move to explicit batching/chunking across nights.
+
+---
+
+## 9. Operational fixes required to make the composition actually run (found live)
+
+Bringing the full stack up surfaced three defects that silently blocked the
+unified score's ML-derived signals — all fixed and verified end-to-end:
+
+1. **`pyrosense_ml` could not start: `.env` pointed at a dead Postgres port.**
+   `DATABASE_URL` targeted `localhost:5433` (an exited container); the live
+   compose DB (`sih-db-1`, healthy) is exposed on **5434** (per
+   docker-compose.yml's own comment). Fixed the env (file is gitignored;
+   backup left at `pyrosense_ml/.env.bak-5433`). Every Node→ML proxy route
+   was 502ing purely because of this — the frontend's `GET /api/ml/health`
+   502s in the browser console were this, not a routing bug.
+2. **`/internal/classify` returned no `risk_score`** — the endpoint computed
+   probabilities but never the weighted risk component the Node side's Zod
+   contract requires (schema would have rejected every response). It now
+   computes `risk_score` via the shared `predict_weights` module, making it
+   the complete scoring primitive.
+3. **Pre-existing crash in `engineer.py::_detection_features`**: the SQLite
+   query (`detection_history_query_sqlite`) selected
+   `lat, lng, frp, acq_date, acq_time` but the feature code reads
+   `bright_ti4`/`bright_ti5` — sqlite3.Row raises `IndexError: No item with
+   that key`, so `/internal/classify` returned HTTP 500 for **any point
+   with nearby detections** (empty areas worked, masking the bug — Mumbai
+   passed, Surat crashed). The SELECT now includes both brightness columns.
+
+Hardening added in the same pass:
+
+- `fetchCellRisk` treats `/internal/risk`'s 404 (`insufficient_history`) as
+  a normal null, not a breaker failure — three facilities with unscored
+  cells would otherwise open the circuit breaker and kill all ML scoring.
+- `/internal/classify` calls get a 120s budget (matches the pre-existing
+  /predict proxy budget; measured 7s warm, >60s when Overpass mirrors are
+  slow) and a 10-min/500-entry TTL cache (~11 m key) so repeat detail views
+  of the same site don't re-pay external fetches; failures are not cached.
+- The facility-detail endpoint runs risk composition and environment
+  enrichment in parallel lanes (was sequential) — warm detail latency:
+  ~0.17s.
+
+Verified live after the fixes: `/api/ml/health` → 200;
+hotspot `risk-score` → 55, provenance `["environment"]`; facility detail →
+61, provenance `["base","environment"]` (hand-check: (66×0.4+55×0.35)/0.75
+= 60.9 → 61 ✓), tag provenance `ml_observations`.

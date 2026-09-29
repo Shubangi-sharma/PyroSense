@@ -249,6 +249,12 @@ export async function fetchCellRisk(cell: string): Promise<RiskEntry | null> {
   if (state === "open") return null;
   try {
     const { status, body } = await call(`/internal/risk/${encodeURIComponent(cell)}`);
+    if (status === 404) {
+      // "insufficient_history" — a NORMAL answer for a cell the nightly GRU
+      // run never scored (no stored prediction). Not a service failure:
+      // record nothing, compose renormalizes without the temporal signal.
+      return null;
+    }
     if (status !== 200) throw new Error(`HTTP ${status}`);
     const parsed = RiskEntrySchema.parse({ ...(body as object), h3_cell: cell });
     recordSuccess();
@@ -276,6 +282,11 @@ export async function fetchClassificationRisk(
     const { status, body } = await call(
       "/internal/classify",
       { method: "POST", body: JSON.stringify({ latitude: lat, longitude: lng }) },
+      // /internal/classify engineers features live (Overpass + land cover +
+      // weather fetches — measured 7s warm / >60s when mirrors are slow).
+      // Aligned with the pre-existing 120s /predict proxy budget; the default
+      // 15s lane budget would flap the breaker on every cold call.
+      { timeoutMs: 120_000 },
     );
     if (status !== 200) throw new Error(`HTTP ${status}`);
     const parsed = ClassificationRiskResponseSchema.parse(body);

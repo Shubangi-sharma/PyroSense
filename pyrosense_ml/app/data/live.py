@@ -314,7 +314,7 @@ def detection_history_query_sqlite(
     lng_scale = max(0.1, math.cos(math.radians(lat)))
     return (
         """
-        SELECT lat, lng, frp, acq_date, acq_time
+        SELECT lat, lng, frp, acq_date, acq_time, bright_ti4, bright_ti5
         FROM firms_detections
         WHERE lat BETWEEN :min_lat AND :max_lat
           AND lng BETWEEN :min_lng AND :max_lng

@@ -236,12 +236,20 @@ async def classify(body: ClassifyRequest, session: AsyncSession = Depends(get_db
     """
     from app.features.engineer import engineer_features
     from app.ml.inference import predict as run_inference
+    from app.ml.predict_weights import compute_classification_risk_score
 
     engineered = await engineer_features(body.latitude, body.longitude)
     try:
         result = run_inference(engineered.features)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=422, detail=f"classification failed: {exc}") from exc
+
+    # Classification-derived risk component of the unified Risk Score
+    # (weighted probability × category danger weights — same computation
+    # /predict exposes as risk_score). The Node BFF consumes exactly this
+    # field for the environment signal; keeping it here makes /internal/
+    # classify the complete scoring primitive (no persistence, no GenAI).
+    cls_risk_score = compute_classification_risk_score(result.probabilities)
 
     needs_review = result.confidence < 0.40
     return {
@@ -250,6 +258,7 @@ async def classify(body: ClassifyRequest, session: AsyncSession = Depends(get_db
         "class": result.predicted_class,
         "confidence": result.confidence,
         "probabilities": result.probabilities,
+        "risk_score": cls_risk_score,
         "needs_review": needs_review,
         "needs_review_note": (
             "confidence below threshold — treat as Needs Review" if needs_review else None

@@ -134,6 +134,36 @@ function composeFromComponents(
   };
 }
 
+/* ── environment signal (cached) ────────────────────────────────────────── */
+
+/**
+ * Small TTL cache for the environment component. /internal/classify
+ * engineers features live (Overpass + land cover + weather — tens of
+ * seconds cold, varying with external-source health), so detail views of
+ * the same site would otherwise re-pay that on every request. Keyed at 4
+ * decimal places (~11 m) — same site, same signal; TTL bounds staleness.
+ * Failures are NOT cached: the next request retries (best-effort lane).
+ */
+const ENV_CACHE_MAX = 500;
+const ENV_CACHE_TTL_MS = 10 * 60 * 1000;
+const envCache = new Map<string, { at: number; value: number }>();
+
+async function classificationRiskCached(lat: number, lng: number): Promise<number | null> {
+  const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+  const hit = envCache.get(key);
+  if (hit && Date.now() - hit.at < ENV_CACHE_TTL_MS) return hit.value;
+  const res = await fetchClassificationRisk(lat, lng);
+  const value = res?.risk_score ?? null;
+  if (value != null) {
+    if (envCache.size >= ENV_CACHE_MAX) {
+      const oldest = envCache.keys().next().value;
+      if (oldest !== undefined) envCache.delete(oldest);
+    }
+    envCache.set(key, { at: Date.now(), value });
+  }
+  return value;
+}
+
 /* ── temporal signal from GRU horizons ──────────────────────────────────── */
 
 /**
@@ -182,11 +212,10 @@ export async function computeHotspotRiskScore(
   lat: number,
   lng: number,
 ): Promise<RiskScoreResult> {
-  const [envRes, cellRisk] = await Promise.all([
-    fetchClassificationRisk(lat, lng).catch(() => null),
+  const [environment, cellRisk] = await Promise.all([
+    classificationRiskCached(lat, lng).catch(() => null),
     fetchCellRisk(h3.latLngToCell(lat, lng, 7)).catch(() => null),
   ]);
-  const environment = envRes?.risk_score ?? null;
   const temporal = temporalSignalFromCellRisk(cellRisk ?? undefined);
   const computedAt = new Date().toISOString();
   return composeFromComponents(
@@ -221,12 +250,11 @@ export async function computeRiskScoreLive(
   const base = baseSignalFromScore(classificationScore);
 
   // Environment + temporal in parallel; each independently nullable.
-  const [envRes, cellRisk] = await Promise.all([
-    fetchClassificationRisk(facility.lat, facility.lng).catch(() => null),
+  const [environment, cellRisk] = await Promise.all([
+    classificationRiskCached(facility.lat, facility.lng).catch(() => null),
     fetchCellRisk(h3.latLngToCell(facility.lat, facility.lng, 7)).catch(() => null),
   ]);
 
-  const environment = envRes?.risk_score ?? null;
   const temporal = temporalSignalFromCellRisk(cellRisk ?? undefined);
 
   const computedAt = new Date().toISOString();

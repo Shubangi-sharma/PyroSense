@@ -83,7 +83,8 @@ export async function getAnalyses(req: Request, res: Response): Promise<void> {
  * environment often decides between e.g. "agricultural burn" and
  * "industrial incident" near an untagged "Industrial Site #…". Failure of
  * the ML service is non-fatal: the tag falls back to fire-physics evidence
- * and the response notes the degradation.
+ * and the response notes the degradation. The unified Risk Score composes
+ * in the same non-fatal style (missing signal → renormalize).
  */
 export async function getFacilityAnalysis(req: Request, res: Response): Promise<void> {
   const id = req.params.id;
@@ -92,65 +93,78 @@ export async function getFacilityAnalysis(req: Request, res: Response): Promise<
     json(res, 404, { error: `Facility not found: ${id}` });
     return;
   }
-  const { classification, narrative, persistence, fireCharacteristics, predictedTag, riskScore } =
-    await analyzeFacility(facility, new Date());
 
-  // Environment enrichment (best-effort, never blocks the classification).
-  let environment: FireTagEnvironment | null = null;
-  let weather: FireTagWeather | null = null;
-  let tagProvenance: "ml_observations" | "fire_physics_only" = "fire_physics_only";
-  try {
-    const { status, body } = await proxyObservations(facility.lat, facility.lng);
-    if (status === 200 && body && typeof body === "object") {
-      const obs = body as {
-        land_cover?: { ratios?: Record<string, number | null>; dominant?: string | null; vegetation_ratio?: number | null; provenance?: string };
-        surroundings?: { distances_km?: Record<string, number | null>; proximity_flags?: Record<string, boolean | null>; provenance?: string };
-        weather?: {
-          mean_temperature_c?: number | null;
-          max_temperature_c?: number | null;
-          mean_relative_humidity?: number | null;
-          min_relative_humidity?: number | null;
-          mean_wind_speed_ms?: number | null;
-          max_wind_speed_ms?: number | null;
-          total_precipitation?: number | null;
-          provenance?: string;
-        };
-      };
-      const lcProv = obs.land_cover?.provenance;
-      const sProv = obs.surroundings?.provenance;
-      const wProv = obs.weather?.provenance;
-      const degraded = lcProv === "unavailable" && sProv === "unavailable";
-      if (!degraded) {
-        environment = {
-          landCover: obs.land_cover?.ratios,
-          dominantLandCover: obs.land_cover?.dominant ?? null,
-          vegetationRatio: obs.land_cover?.vegetation_ratio ?? null,
-          distancesKm: obs.surroundings?.distances_km,
-          proximityFlags: obs.surroundings?.proximity_flags,
-          degraded,
-        };
-        tagProvenance = "ml_observations";
+  // Risk composition (live ML calls inside) and environment enrichment run
+  // in PARALLEL lanes — both hit pyrosense_ml, and sequential awaiting would
+  // double the detail page's ML latency for no benefit.
+  const [analysis, enrichment] = await Promise.all([
+    analyzeFacility(facility, new Date()),
+    (async (): Promise<{
+      environment: FireTagEnvironment | null;
+      weather: FireTagWeather | null;
+      tagProvenance: "ml_observations" | "fire_physics_only";
+    }> => {
+      let environment: FireTagEnvironment | null = null;
+      let weather: FireTagWeather | null = null;
+      let tagProvenance: "ml_observations" | "fire_physics_only" = "fire_physics_only";
+      try {
+        const { status, body } = await proxyObservations(facility.lat, facility.lng);
+        if (status === 200 && body && typeof body === "object") {
+          const obs = body as {
+            land_cover?: { ratios?: Record<string, number | null>; dominant?: string | null; vegetation_ratio?: number | null; provenance?: string };
+            surroundings?: { distances_km?: Record<string, number | null>; proximity_flags?: Record<string, boolean | null>; provenance?: string };
+            weather?: {
+              mean_temperature_c?: number | null;
+              max_temperature_c?: number | null;
+              mean_relative_humidity?: number | null;
+              min_relative_humidity?: number | null;
+              mean_wind_speed_ms?: number | null;
+              max_wind_speed_ms?: number | null;
+              total_precipitation?: number | null;
+              provenance?: string;
+            };
+          };
+          const lcProv = obs.land_cover?.provenance;
+          const sProv = obs.surroundings?.provenance;
+          const wProv = obs.weather?.provenance;
+          const degraded = lcProv === "unavailable" && sProv === "unavailable";
+          if (!degraded) {
+            environment = {
+              landCover: obs.land_cover?.ratios,
+              dominantLandCover: obs.land_cover?.dominant ?? null,
+              vegetationRatio: obs.land_cover?.vegetation_ratio ?? null,
+              distancesKm: obs.surroundings?.distances_km,
+              proximityFlags: obs.surroundings?.proximity_flags,
+              degraded,
+            };
+            tagProvenance = "ml_observations";
+          }
+          // Weather feeds the tag whenever the ML service returned ANY weather
+          // provenance (open-meteo / forecast / cache) — null fields inside are
+          // handled per-feature by the scorer.
+          if (wProv && wProv !== "unavailable") {
+            const w = obs.weather ?? {};
+            weather = {
+              meanTemperatureC: w.mean_temperature_c ?? null,
+              maxTemperatureC: w.max_temperature_c ?? null,
+              meanRelativeHumidity: w.mean_relative_humidity ?? null,
+              minRelativeHumidity: w.min_relative_humidity ?? null,
+              meanWindSpeedMs: w.mean_wind_speed_ms ?? null,
+              maxWindSpeedMs: w.max_wind_speed_ms ?? null,
+              totalPrecipitation: w.total_precipitation ?? null,
+            };
+            if (tagProvenance === "fire_physics_only") tagProvenance = "ml_observations";
+          }
+        }
+      } catch {
+        // ML service unreachable — tag stays fire-physics-only (honest fallback).
       }
-      // Weather feeds the tag whenever the ML service returned ANY weather
-      // provenance (open-meteo / forecast / cache) — null fields inside are
-      // handled per-feature by the scorer.
-      if (wProv && wProv !== "unavailable") {
-        const w = obs.weather ?? {};
-        weather = {
-          meanTemperatureC: w.mean_temperature_c ?? null,
-          maxTemperatureC: w.max_temperature_c ?? null,
-          meanRelativeHumidity: w.mean_relative_humidity ?? null,
-          minRelativeHumidity: w.min_relative_humidity ?? null,
-          meanWindSpeedMs: w.mean_wind_speed_ms ?? null,
-          maxWindSpeedMs: w.max_wind_speed_ms ?? null,
-          totalPrecipitation: w.total_precipitation ?? null,
-        };
-        if (tagProvenance === "fire_physics_only") tagProvenance = "ml_observations";
-      }
-    }
-  } catch {
-    // ML service unreachable — tag stays fire-physics-only (honest fallback).
-  }
+      return { environment, weather, tagProvenance };
+    })(),
+  ]);
+
+  const { classification, narrative, persistence, fireCharacteristics, predictedTag, riskScore } = analysis;
+  const { environment, weather, tagProvenance } = enrichment;
 
   const enrichedTag = predictedFireTag(facility, classification, environment, weather, fireCharacteristics.latestBrightnessK);
 
@@ -163,7 +177,12 @@ export async function getFacilityAnalysis(req: Request, res: Response): Promise<
       templatedSummary: narrative.templatedSummary,
       classification: narrative.classification,
       classificationLabel: narrative.classificationLabel,
-      riskScore,
+      riskScore: {
+        riskScore: riskScore.riskScore,
+        riskScoreProvenance: riskScore.riskScoreProvenance,
+        riskScoreComputedAt: riskScore.computedAt,
+        riskScoreLive: riskScore.live,
+      },
     },
     // Unified Risk Score (live detail path) — surfaced at top level too so
     // clients never re-derive it from the classification object.
