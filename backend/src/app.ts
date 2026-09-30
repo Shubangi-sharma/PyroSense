@@ -64,7 +64,7 @@ export function createApp(): Express {
 
   // Root identity probe — nicer for uptime monitors than a bare 404.
   app.get("/", (_req, res) => {
-    res.json({ service: "pyrosense-backend", status: "ok" });
+    res.json({ service: "pyrosense-2aif", status: "ok" });
   });
 
   app.use(notFoundHandler);

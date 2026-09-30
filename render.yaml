@@ -1,6 +1,8 @@
 services:
   # Managed PostgreSQL
   - type: pgo
+    # ⚠️ Must match the live Render service name exactly, or a Blueprint sync
+    # creates a duplicate instead of updating the existing service.
     name: pyrosense-db
     plan: standard
     databaseName: pyrosense_ml
@@ -8,6 +10,8 @@ services:
 
   # FastAPI ML Service
   - type: web
+    # ⚠️ Must match the live Render service name exactly, or a Blueprint sync
+    # creates a duplicate instead of updating the existing service.
     name: pyrosense-ml
     env: docker
     dockerfilePath: ./Dockerfile
@@ -31,11 +35,12 @@ services:
         value: "false"
 
   # Node.js Backend Service
-  # ⚠️ The live Render service is named `pyrosense-2aif` (created outside the
-  # Blueprint). A Blueprint sync with `name: pyrosense-backend` would create a
-  # NEW service instead of updating it — see DEPLOYMENT.md before syncing.
+  # ⚠️ `name` must match the live Render service (`pyrosense-2aif`, created
+  # outside this Blueprint) exactly, or a Blueprint sync reads the mismatch as
+  # "service doesn't exist" and creates a DUPLICATE backend instead of
+  # updating it. Do not rename; see DEPLOYMENT.md before syncing.
   - type: web
-    name: pyrosense-backend
+    name: pyrosense-2aif
     env: docker
     dockerContext: ./backend
     dockerfilePath: ./backend/Dockerfile

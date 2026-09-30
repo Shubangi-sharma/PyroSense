@@ -9,11 +9,24 @@ Production layout:
 | `pyrosense-db` (PostgreSQL) | Render managed Postgres (free) | internal — used by pyrosense_ml only |
 | `frontend/` (Next.js) | Vercel project | https://pyro-sense.vercel.app |
 
-> ⚠️ **Blueprint name mismatch:** `render.yaml` names the Node backend
-> `pyrosense-backend`, but the live Render service is `pyrosense-2aif`. If you
-> ever re-apply the Blueprint, Render will create a NEW service named
-> `pyrosense-backend` instead of updating the existing one. Rename the service
-> in `render.yaml` (or in the dashboard) before syncing.
+> ⚠️ **Blueprint name match (was a live hazard, now fixed in `render.yaml`):**
+> the live backend Render service is named `pyrosense-2aif` (created outside
+> the Blueprint); `render.yaml` now uses that exact `name:` for all three
+> services, so a Blueprint sync UPDATES the live services instead of creating
+> duplicates. Never rename a service in either place without checking the
+> other — and note Render's rename behavior can change the `*.onrender.com`
+> subdomain, which `NEXT_PUBLIC_API_BASE_URL`, `CORS_ORIGIN` and
+> `keep-warm.yml` all depend on. Verify the URL survives before renaming.
+>
+> ⚠️ **Auto-deploy reliability (2026-09-30 incident):** pushes to `main` twice
+> failed to trigger Render redeploys — Render's auto-deploy webhook for
+> `pyrosense-2aif` was dead (commit `14963ff` documents the probe). Prod was
+> 3 commits behind `main` for ~20 hours. After every manual deploy: check
+> Render → service → Settings → Build & Deploy → Auto-Deploy (enabled,
+> `main` branch), and GitHub → repo → Settings → Webhooks → the Render
+> webhook → Recent Deliveries (non-2xx deliveries = silent deploy loss).
+> Mitigate the free-tier spin-down with an external pinger (UptimeRobot,
+> 5-min interval) — see `.github/workflows/keep-warm.yml`.
 
 The browser talks to **one origin only**: the Render backend. It proxies
 `/api/predict` and `/api/ml/*` to the ML service, so `CORS_ORIGIN` matters on
@@ -71,7 +84,11 @@ deploy (dashboard → Manual Deploy, or `POST /v1/services/{id}/deploys`).
   2. **Keep-warm pinger** (`.github/workflows/keep-warm.yml`): pings both
      services' `/health` every 14 min (inside the ~15-min spin-down window)
      so the disk rarely gets wiped at all. Latency optimizer only — the app
-     self-heals without it.
+     self-heals without it. PRIMARY warming is now an external pinger
+     (UptimeRobot free tier, 5-min monitors on both `/health` URLs): GitHub
+     Actions' scheduler ran this workflow only 3× in 14 hours on 2026-09-30
+     (documented platform throttling on shared runners) — keep the Action as
+     a backup, don't rely on it.
   On a paid plan, attach a Disk at `/var/data` and keep
   `DATABASE_URL=/var/data/pyrosense.db` to survive deploys outright.
 - **`DATABASE_URL` on the backend is a file path** (better-sqlite3). Do not
