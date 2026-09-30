@@ -26,6 +26,7 @@ import { ingestUserDataset } from "./ingestUserDataset.js";
 import { refreshLive } from "./refreshLiveFirms.js";
 import { ingestArchive } from "./ingestFirmsArchive.js";
 import { runMatchingJob } from "./runMatching.js";
+import { httpRequest } from "../lib/http.js";
 import { ingestLog as log } from "../lib/logger.js";
 
 let started = false;
@@ -103,6 +104,29 @@ export function bootstrapOnce(): void {
         log.error({ err: String(err) }, "bootstrap: archive backfill failed (15-min cron keeps live data flowing)");
       }
     }
+
+    // 4. Pre-warm the ML service (fire-and-forget, long budget). On the free
+    // plan the two Render services spin down independently, so the FIRST
+    // /api/predict or /api/ml/* request after a backend-only wake otherwise
+    // pays ML's ~120s cold start on top of the user's wait. Pinging /health
+    // here wakes ML while this backend is still doing its own bootstrap, so
+    // the two cold starts overlap instead of stacking.
+    void (async () => {
+      const started = Date.now();
+      try {
+        const { status } = await httpRequest(
+          `${env.ML_API_BASE_URL.replace(/\/+$/, "")}/health`,
+          {},
+          { timeoutMs: 300_000 }, // ML cold start measured >120s
+        );
+        log.info({ status, ms: Date.now() - started }, "bootstrap: ML pre-warm done");
+      } catch (err) {
+        log.warn(
+          { err: String(err), ms: Date.now() - started },
+          "bootstrap: ML pre-warm failed (first ML request will pay the cold start)",
+        );
+      }
+    })();
   })();
 }
 
