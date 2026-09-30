@@ -41,8 +41,11 @@ jobs:
         # ML lives behind the backend's proxy too, but pinging it directly
         # keeps BOTH instances' idle timers reset and doubles as an
         # independent liveness signal for the FastAPI service.
+        # NOTE: 300s, not 60s — if ML has already spun down, its cold start
+        # measured >120s (2026-09-30 live probe) and a 60s budget made this
+        # step fail every run WITHOUT ever waking the service.
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 \
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 300 \
             https://pyrosense-ml.onrender.com/health)
           echo "ml /health -> $code"
           test "$code" = "200"
