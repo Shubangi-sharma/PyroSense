@@ -31,6 +31,10 @@ export function createApp(): Express {
   app.use(helmet());
   app.set("x-powered-by", false);
   app.disable("etag");
+  // Exactly one trusted reverse-proxy hop (Render's proxy): X-Forwarded-For
+  // then resolves to the real client IP, so express-rate-limit buckets
+  // per-client instead of per-platform-proxy. See config/env.ts TRUST_PROXY.
+  app.set("trust proxy", env.TRUST_PROXY);
 
   app.use(compression());
   app.use(

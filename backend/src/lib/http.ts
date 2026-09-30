@@ -1,11 +1,14 @@
 /**
- * Outbound HTTP transport with automatic curl fallback.
+ * Outbound HTTP transport with an opt-in curl fallback.
  *
- * fetch() is always tried first. If the runtime cannot reach the host
- * directly (sandboxed networks / VPN filtering — this dev box blocks undici
- * with ETIMEDOUT while curl succeeds), the request transparently falls back
- * to the system curl binary, which uses the OS resolver/proxy stack. Callers
- * never see the mechanism; a request either yields a status+body or throws.
+ * fetch() is always tried first. The curl fallback exists ONLY for sandboxed
+ * dev networks that block Node's undici at the socket level while the OS
+ * curl binary still works — it must be explicitly enabled via
+ * OUTBOUND_FETCH_FALLBACK_CURL=true. Production containers don't ship curl,
+ * and a silent fallback to a missing binary turned real transport failures
+ * into misleading `spawn curl ENOENT` errors (e.g. the Render "af" region
+ * ingest failures). Callers never see the mechanism; a request either yields
+ * a status+body or throws.
  *
  * Provider queues (§6): every outbound call to FIRMS, Overpass, or a GenAI
  * provider goes through its own p-limit lane, so a burst of frontend
@@ -14,6 +17,7 @@
 
 import { execFile } from "node:child_process";
 import pLimit from "p-limit";
+import { env } from "../config/env.js";
 import { logger } from "./logger.js";
 
 const log = logger.child({ module: "http" });
@@ -96,6 +100,10 @@ export async function httpRequest(
       // A real HTTP status response should NOT trigger the curl fallback —
       // only transport-level failures (DNS, TLS, timeout, connection reset).
       if (err instanceof HttpError) throw err;
+      // Opt-in only (OUTBOUND_FETCH_FALLBACK_CURL): production images have no
+      // curl binary, and silently spawning a missing binary turns a real
+      // transport error into a misleading `spawn curl ENOENT`.
+      if (!env.OUTBOUND_FETCH_FALLBACK_CURL) throw err;
       log.debug({ url: url.split("?")[0], err: String(err) }, "fetch transport failed, falling back to curl");
       const text = await viaCurl(url, { method, headers, body }, opts.timeoutMs ?? CURL_TIMEOUT_MS);
       return { status: 200, text };

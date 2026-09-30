@@ -9,10 +9,24 @@
 
 import "dotenv/config";
 import { z } from "zod";
+/** z.coerce.boolean() treats ANY non-empty string (even "false") as true —
+ *  parse explicit false-y strings correctly instead. */
+const boolFrom = (v: unknown): boolean =>
+  v === true || (typeof v === "string" && ["true", "1", "yes", "on"].includes(v.trim().toLowerCase()));
 
 const schema = z.object({
   /** HTTP listen port (host 0.0.0.0 — reachable from LAN/containers). */
   PORT: z.coerce.number().int().positive().default(4000),
+
+  /**
+   * Express `trust proxy` hop count. Render fronts the backend with ONE
+   * reverse proxy, so every request arrives with X-Forwarded-For; without
+   * trusting that proxy, express-rate-limit keys off Render's proxy IP
+   * instead of the real client (and logs ERR_ERL_UNEXPECTED_X_FORWARDED_FOR).
+   * Do NOT set true — that trusts the whole chain and lets clients spoof
+   * their IP via the header. 1 = trust exactly one hop (the platform proxy).
+   */
+  TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(1),
 
   /** NASA FIRMS MAP_KEY — required: no key, no detections, no product. */
   FIRMS_MAP_KEY: z
@@ -89,6 +103,17 @@ const schema = z.object({
    */
   ARCHIVE_BACKFILL_DAYS: z.coerce.number().int().min(0).max(365).default(10),
   ARCHIVE_BACKFILL_MIN_ROWS: z.coerce.number().int().min(1).default(50_000),
+
+  /**
+   * Dev-box escape hatch ONLY: some sandboxed networks block Node's undici
+   * (fetch) at the socket level while the OS curl binary still works. Setting
+   * this re-enables http.ts's curl fallback for such environments. Leave
+   * UNSET in production — container images don't ship curl, and a silent
+   * fallback to a missing binary masks the real transport error (the
+   * spawn curl ENOENT class of failure). Production fetch problems should
+   * surface as fetch errors, not curl spawn errors.
+   */
+  OUTBOUND_FETCH_FALLBACK_CURL: z.preprocess(boolFrom, z.boolean()).default(false),
 });
 
 const parsed = schema.safeParse(process.env);
