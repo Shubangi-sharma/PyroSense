@@ -6,52 +6,54 @@ PyroSense utilizes a 3-tier microservice architecture to decouple the heavy Pyth
 
 ```mermaid
 graph TD
-    %% Define users and external services
-    User([First Responder / UI])
-    NASA([NASA FIRMS API])
-    LLM([OpenRouter GenAI])
+    %% External actors and services
+    User(["First Responder / UI"])
+    NASA(["NASA FIRMS API"])
+    LLM(["OpenRouter GenAI"])
 
-    %% Define UI
-    subgraph Frontend
-        NextJS[Next.js 14 App Router]
-        MapLibre[MapLibre GL Map]
+    %% Frontend
+    subgraph FE ["Frontend"]
+        NextJS["Next.js 14 App Router"]
+        MapLibre["MapLibre GL Map"]
     end
 
-    %% Define Backend
-    subgraph Backend [Backend BFF (Node.js/Express)]
-        Express[Express API Gateway]
-        RateLimiter[express-rate-limit]
-        Cron[NASA Cron Ingestion Job]
-        SQLite[(SQLite WAL Cache)]
+    %% Backend
+    subgraph BE ["Backend BFF - Node.js / Express"]
+        Express["Express API Gateway"]
+        RateLimiter["express-rate-limit"]
+        Cron["NASA Cron Ingestion Job"]
+        SQLite[("SQLite WAL Cache")]
     end
 
-    %% Define ML Service
-    subgraph ML_Service [Machine Learning (Python/FastAPI)]
-        FastAPI[FastAPI Inference Server]
-        GBM[Gradient Boosting Model]
-        GRU[GRU Timeline Predictor]
-        PostGIS[(PostgreSQL + PostGIS)]
+    %% ML Service
+    subgraph ML ["Machine Learning - Python / FastAPI"]
+        FastAPI["FastAPI Inference Server"]
+        GBM["Gradient Boosting Model"]
+        GRU["GRU Timeline Predictor"]
+        PostGIS[("PostgreSQL + PostGIS")]
     end
 
-    %% Connections
-    User -->|Views Map & Clicks| NextJS
-    NextJS <-->|GeoJSON Data & Summaries| Express
-    
-    Express -->|Rate limits & validates| RateLimiter
+    %% Frontend connections
+    User -->|"Views map and clicks"| NextJS
+    NextJS --> MapLibre
+    NextJS <-->|"GeoJSON data and summaries"| Express
+
+    %% Rate limiting and cache
+    Express -->|"Rate limits and validates"| RateLimiter
     RateLimiter <--> SQLite
 
-    %% Data Ingestion
-    Cron -->|Pulls active fires| NASA
-    Cron -->|Pushes raw data| FastAPI
+    %% Data ingestion
+    Cron -->|"Pulls active fires"| NASA
+    Cron -->|"Pushes raw data"| FastAPI
 
-    %% ML Pipeline
-    Express <-->|Requests inference| FastAPI
+    %% ML pipeline
+    Express <-->|"Requests inference"| FastAPI
     FastAPI <--> PostGIS
-    FastAPI -->|Extracts Features| GBM
-    FastAPI -->|Generates Timelines| GRU
+    FastAPI -->|"Extracts features"| GBM
+    FastAPI -->|"Generates timelines"| GRU
 
     %% GenAI
-    Express <-->|Feeds Risk Data for Briefing| LLM
+    Express <-->|"Feeds risk data for briefing"| LLM
 ```
 
 ## Component Breakdown
