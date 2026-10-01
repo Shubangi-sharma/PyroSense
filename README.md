@@ -16,7 +16,7 @@
 **PyroSense** is an advanced geospatial intelligence platform that intercepts raw satellite thermal telemetry and transforms it into explainable, risk-ranked insights for industrial infrastructure. 
 
 For the complete deep-dive on architecture, ML pipelines, and API references, start here:
-**➡ [Read the full documentation (docs/README.md)](docs/README.md)**
+**➡ [Read the full documentation (docs/README.md)](docs/index.md)**
 
 ---
 
