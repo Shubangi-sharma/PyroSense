@@ -319,17 +319,17 @@ body {
   filter: saturate(0.72) contrast(1.06) brightness(0.9);
 }
 
-/* Wikimedia place-name overlay — English labels, blended over satellite
-   imagery: desaturated + screen-blended so only text/boundaries show
-   through and the photography stays untouched underneath. */
+/* CARTO dark-only-labels overlay — English labels, blended over satellite
+   imagery: the tiles already ship light text on transparency, so only a soft
+   shadow is applied (the old invert chain was tuned for Wikimedia's light
+   tiles and would flip CARTO's text to unreadable dark). */
 .pyro-tile-labels {
   opacity: 0.9;
   mix-blend-mode: screen;
 }
 
 .pyro-tile-labels img {
-  filter: grayscale(1) invert(1) contrast(0.9) brightness(1.25)
-    drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
 }
 
 /* Control/overlay cards floating above the map — shared glass treatment so

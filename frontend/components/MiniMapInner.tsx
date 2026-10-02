@@ -3,7 +3,7 @@
 import React from "react";
 import { CircleMarker, MapContainer, TileLayer } from "react-leaflet";
 import { RiskStatus, statusColorHex } from "@/lib/types";
-import { WIKIMEDIA_URL } from "./MapInner";
+import { CARTO_DARK_URL, CARTO_LABELS_URL } from "./MapInner";
 
 /**
  * Non-interactive locator map for the facility detail page.
@@ -38,21 +38,20 @@ export default function MiniMapInner({
         url={
           satellite
             ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            : WIKIMEDIA_URL
+            : CARTO_DARK_URL
         }
-        className={satellite ? undefined : "map-tiles-dark"}
         attribution={
           satellite
             ? 'Tiles &copy; Esri - Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
-            : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &middot; &copy; <a href="https://carto.com/attributions">CARTO</a>'
         }
       />
       {/* English place names over satellite for orientation */}
       {satellite && (
         <TileLayer
-          url={WIKIMEDIA_URL}
+          url={CARTO_LABELS_URL}
           className="pyro-tile-labels"
-          attribution="Map: &copy; OpenStreetMap contributors &middot; Wikimedia"
+          attribution="&copy; OpenStreetMap contributors &middot; &copy; CARTO"
         />
       )}
       <CircleMarker

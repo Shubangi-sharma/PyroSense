@@ -59,13 +59,19 @@ import clsx from "clsx";
 
 export type Basemap = "dark" | "streets" | "satellite";
 
-export const WIKIMEDIA_URL = "https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png?lang=en";
+// Root-cause fix (prod, 2026-10-02): maps.wikimedia.org tiles fail to load in
+// real browser contexts (every request hangs/pends forever; Image() probe →
+// ERROR) while all other providers — OSM, CARTO, Esri — load fine, and the
+// same Wikimedia URL succeeds from curl. Replaced the basemap + label layers
+// with CARTO's raster tiles (native dark style, no CSS invert needed).
+export const CARTO_DARK_URL = "https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+export const CARTO_LABELS_URL = "https://basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png";
+export const CARTO_VOYAGER_URL = "https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
 export const ESRI_IMAGERY_URL =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-export const WIKIMEDIA_LABELS_URL = WIKIMEDIA_URL;
 
-const WIKIMEDIA_ATTRIBUTION =
-  'Map: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &middot; <a href="https://maps.wikimedia.org">Wikimedia</a>';
+const CARTO_ATTRIBUTION =
+  'Map: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &middot; &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 export const BASEMAPS: {
   id: Basemap;
@@ -74,8 +80,8 @@ export const BASEMAPS: {
   attribution: string;
   className?: string;
 }[] = [
-  { id: "dark", label: "Dark", url: WIKIMEDIA_URL, attribution: WIKIMEDIA_ATTRIBUTION, className: "map-tiles-dark" },
-  { id: "streets", label: "Streets", url: WIKIMEDIA_URL, attribution: WIKIMEDIA_ATTRIBUTION },
+  { id: "dark", label: "Dark", url: CARTO_DARK_URL, attribution: CARTO_ATTRIBUTION },
+  { id: "streets", label: "Streets", url: CARTO_VOYAGER_URL, attribution: CARTO_ATTRIBUTION },
   {
     id: "satellite",
     label: "Satellite",
@@ -179,7 +185,7 @@ function BaseLayer({
         }}
       />
       {basemap === "satellite" && (
-        <TileLayer key="sat-labels" url={WIKIMEDIA_LABELS_URL} className="pyro-tile-labels" attribution={WIKIMEDIA_ATTRIBUTION} />
+        <TileLayer key="sat-labels" url={CARTO_LABELS_URL} className="pyro-tile-labels" attribution={CARTO_ATTRIBUTION} />
       )}
     </>
   );
