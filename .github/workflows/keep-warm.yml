@@ -33,7 +33,7 @@ jobs:
       - name: Ping backend /health
         run: |
           code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 \
-            https://pyrosense-2aif.onrender.com/health)
+            https://pyrosense-backend-v2.onrender.com/health)
           echo "backend /health -> $code"
           test "$code" = "200"
 
@@ -46,6 +46,6 @@ jobs:
         # step fail every run WITHOUT ever waking the service.
         run: |
           code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 300 \
-            https://pyrosense-ml.onrender.com/health)
+            https://pyrosense-ml-v2.onrender.com/health)
           echo "ml /health -> $code"
           test "$code" = "200"
